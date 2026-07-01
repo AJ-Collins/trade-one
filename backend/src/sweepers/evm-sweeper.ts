@@ -49,9 +49,20 @@ async function sweepSingleDeposit(
     return;
   }
 
-  const gasPrice  = await provider.getGasPrice();
+  const feeData = await provider.getFeeData();
+  let maxFeePerGas = feeData.maxFeePerGas || feeData.gasPrice || await provider.getGasPrice();
+  let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.utils.parseUnits('1.5', 'gwei');
+
+  const { chainId } = await provider.getNetwork();
+  // 137 is Polygon Mainnet
+  if (chainId === 137) {
+    const minPolygonTip = ethers.utils.parseUnits('30', 'gwei');
+    if (maxPriorityFeePerGas.lt(minPolygonTip)) maxPriorityFeePerGas = minPolygonTip;
+    if (maxFeePerGas.lt(minPolygonTip)) maxFeePerGas = minPolygonTip.mul(2);
+  }
+
   const gasLimit  = ethers.BigNumber.from(21_000);
-  const gasCost   = gasPrice.mul(gasLimit);
+  const gasCost   = maxFeePerGas.mul(gasLimit);
   const sendAmount = balanceWei.sub(gasCost);
 
   if (sendAmount.lte(0)) {
@@ -65,7 +76,8 @@ async function sweepSingleDeposit(
     to: HOT_WALLET,
     value: sendAmount,
     gasLimit,
-    gasPrice,
+    maxFeePerGas,
+    maxPriorityFeePerGas,
   });
 
   console.log(`  ↳ Tx broadcast: ${tx.hash}`);

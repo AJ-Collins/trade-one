@@ -96,11 +96,27 @@ async function sweepERC20(network: string, coin: string) {
       const humanAmount = parseFloat(ethers.utils.formatUnits(tokenBalance, decimals));
       console.log(`  ↳ Sweeping ${humanAmount} ${coin} from ${address}`);
 
-      // Fund the deposit address with just enough ETH to pay for the transfer
-      const gasPrice  = await provider.getGasPrice();
-      const gasNeeded = gasPrice.mul(65_000);
+      // Fetch dynamic fee data (EIP-1559)
+      const feeData = await provider.getFeeData();
+      let maxFeePerGas = feeData.maxFeePerGas || feeData.gasPrice || await provider.getGasPrice();
+      let maxPriorityFeePerGas = feeData.maxPriorityFeePerGas || ethers.utils.parseUnits('1.5', 'gwei');
 
-      const fundTx = await gasWallet.sendTransaction({ to: address, value: gasNeeded });
+      // Polygon heavily enforces a 30 gwei minimum tip cap
+      if (network === 'polygon_mainnet') {
+        const minPolygonTip = ethers.utils.parseUnits('30', 'gwei');
+        if (maxPriorityFeePerGas.lt(minPolygonTip)) maxPriorityFeePerGas = minPolygonTip;
+        if (maxFeePerGas.lt(minPolygonTip)) maxFeePerGas = minPolygonTip.mul(2);
+      }
+
+      const gasLimit = ethers.BigNumber.from(65_000);
+      const gasNeeded = maxFeePerGas.mul(gasLimit);
+
+      const fundTx = await gasWallet.sendTransaction({
+        to: address,
+        value: gasNeeded,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
+      });
       await fundTx.wait(1);
 
       // Now send the tokens from the deposit address to the hot wallet
@@ -109,8 +125,9 @@ async function sweepERC20(network: string, coin: string) {
       const tokenWithSigner   = tokenContract.connect(depositWallet);
 
       const transferTx = await tokenWithSigner.transfer(HOT_WALLET, tokenBalance, {
-        gasLimit: 65_000,
-        gasPrice,
+        gasLimit,
+        maxFeePerGas,
+        maxPriorityFeePerGas,
       });
       await transferTx.wait(1);
 
