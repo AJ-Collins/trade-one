@@ -6,8 +6,13 @@ import {
 } from '../config/networks.js';
 import { getConfig } from '../utils/configLoader.js';
 
-export function isEVMNetwork(network: string): network is SupportedNetwork {
-  return isSupportedNetwork(network);
+const EVM_NETWORKS = new Set<string>([
+  'eth_mainnet', 'bsc_mainnet', 'polygon_mainnet', 'arbitrum_mainnet',
+  'sepolia', 'bsc_testnet',
+]);
+
+export function isEVMNetwork(network: string): boolean {
+  return EVM_NETWORKS.has(network);
 }
 
 export async function registerAddressWithAlchemy(address: string | string[], network: string) {
@@ -20,7 +25,7 @@ export async function registerAddressWithAlchemy(address: string | string[], net
   const webhookKeyMap: Record<string, string> = {
     sepolia:          'ALCHEMY_WEBHOOK_SEPOLIA',
     eth_mainnet:      'ALCHEMY_WEBHOOK_ETH_MAINNET',
-    bsc_testnet:      'ALCHEMY_WEBHOOK_BSC_TESTNET',
+    bsc_mainnet:      'ALCHEMY_WEBHOOK_BSC_MAINNET',
     polygon_mainnet:  'ALCHEMY_WEBHOOK_POLYGON',
     arbitrum_mainnet: 'ALCHEMY_WEBHOOK_ARBITRUM',
   };

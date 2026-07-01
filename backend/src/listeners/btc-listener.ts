@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { creditDeposit } from '../services/depositService.js';
+import { getUsdRate } from '../services/priceService.js';
 import { Coin } from '@prisma/client';
 
 // mempool.space is free, no API key, supports mainnet + testnet
@@ -21,17 +22,7 @@ async function getCurrentBlockHeight(base: string): Promise<number> {
   return parseInt(data, 10);
 }
 
-async function getUsdRate(): Promise<number> {
-  try {
-    const { data } = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-      { timeout: 8_000 },
-    );
-    return data?.bitcoin?.usd ?? 60000;
-  } catch {
-    return 60000;
-  }
-}
+// USD rate now fetched from centralized priceService (Redis-cached + stale fallback)
 
 async function checkAddress(
   address: string,
@@ -60,7 +51,7 @@ async function checkAddress(
 
       // vout index disambiguates multiple outputs in same tx to same address
       const uniqueHash = `${tx.txid}:${voutIndex}`;
-      const usdRate = await getUsdRate();
+      const usdRate = await getUsdRate('BTC');
       const usdValue = amountBTC * usdRate;
 
       const deposit = await creditDeposit(
@@ -83,8 +74,12 @@ async function checkAddress(
 
 async function poll(network: string) {
   const base = API_BASE[network];
+  // Only poll for USER-role deposit addresses — skip MARKETERs
   const addresses = await prisma.depositAddress.findMany({
-    where: { network },
+    where: {
+      network,
+      user: { role: 'USER' },
+    },
     select: { address: true, userId: true },
   });
 

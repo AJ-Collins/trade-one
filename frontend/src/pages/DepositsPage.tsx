@@ -15,6 +15,7 @@ export default function DepositsPage() {
 
   const [step, setStep] = useState(1);
   const [amount, setAmount] = useState(60);
+  // const [amount, setAmount] = useState(60);
   const [paymentDetails, setPaymentDetails] = useState<any>(null);
   const [depositConfirmed, setDepositConfirmed] = useState(false);
   const [depositStartedAt, setDepositStartedAt] = useState<Date | null>(null);

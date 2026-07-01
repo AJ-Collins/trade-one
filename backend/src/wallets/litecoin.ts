@@ -2,6 +2,7 @@ import * as bip39 from 'bip39';
 import * as bitcoin from 'bitcoinjs-lib';
 import { BIP32Factory } from 'bip32';
 import * as ecc from 'tiny-secp256k1';
+import { getConfig } from '../utils/configLoader.js';
 
 const bip32 = BIP32Factory(ecc);
 
@@ -14,8 +15,10 @@ const LITECOIN_MAINNET: bitcoin.Network = {
   wif: 0xb0,
 };
 
-export function generateLitecoinAddress(hdAccountIndex: number, index = 0) {
-  const seed = bip39.mnemonicToSeedSync(process.env.MASTER_MNEMONIC!);
+export async function generateLitecoinAddress(hdAccountIndex: number, index = 0) {
+  const mnemonic = await getConfig('MASTER_MNEMONIC');
+  if (!mnemonic) throw new Error('MASTER_MNEMONIC not set in config');
+  const seed = bip39.mnemonicToSeedSync(mnemonic);
   const root = bip32.fromSeed(seed, LITECOIN_MAINNET);
   const path = `m/44'/2'/${hdAccountIndex}'/0/${index}`;
   const child = root.derivePath(path);

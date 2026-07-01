@@ -12,8 +12,8 @@ export interface DepositActivityJob {
 export const depositQueue = new Queue<DepositActivityJob>(DEPOSIT_QUEUE_NAME, {
   connection: redis,
   defaultJobOptions: {
-    attempts: 5,
-    backoff: { type: 'exponential', delay: 5_000 }, // 5s, 10s, 20s, 40s, 80s
+    attempts: 12,
+    backoff: { type: 'exponential', delay: 10_000 }, // 10s, 20s, 40s ... covers 64+ confs on Polygon
     removeOnComplete: { age: 3600, count: 1000 },    // keep an hour / last 1000 for debugging
     removeOnFail: { age: 86_400 },                   // keep failed jobs a day so you can inspect/replay them
   },

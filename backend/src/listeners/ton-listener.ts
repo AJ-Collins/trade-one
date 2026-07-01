@@ -1,23 +1,14 @@
 import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { creditDeposit } from '../services/depositService.js';
+import { getUsdRate } from '../services/priceService.js';
 import { Coin } from '@prisma/client';
 
 // Toncenter free tier — get a free key at https://toncenter.com (no CC required)
 const TONCENTER_BASE = process.env.TONCENTER_API_URL || 'https://toncenter.com/api/v2';
 const TONCENTER_KEY  = process.env.TONCENTER_API_KEY  || '';
 
-async function getUsdRate(): Promise<number> {
-  try {
-    const { data } = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price?ids=the-open-network&vs_currencies=usd',
-      { timeout: 8_000 },
-    );
-    return data?.['the-open-network']?.usd ?? 5;
-  } catch {
-    return 5;
-  }
-}
+// USD rate now fetched from centralized priceService (Redis-cached + stale fallback)
 
 async function checkAddress(address: string, userId: string) {
   const headers = TONCENTER_KEY ? { 'X-API-Key': TONCENTER_KEY } : {};
@@ -45,7 +36,7 @@ async function checkAddress(address: string, userId: string) {
     // TON unique identifier: logical time + hash (LT is per-account monotonic)
     const txHash = `${tx.transaction_id.lt}:${tx.transaction_id.hash}`;
 
-    const usdRate  = await getUsdRate();
+    const usdRate  = await getUsdRate('TON');
     const usdValue = amountTON * usdRate;
 
     const deposit = await creditDeposit(
@@ -66,8 +57,12 @@ async function checkAddress(address: string, userId: string) {
 }
 
 async function poll() {
+  // Only poll for USER-role deposit addresses — skip MARKETERs
   const addresses = await prisma.depositAddress.findMany({
-    where: { network: 'ton_mainnet' },
+    where: {
+      network: 'ton_mainnet',
+      user: { role: 'USER' },
+    },
     select: { address: true, userId: true },
   });
 

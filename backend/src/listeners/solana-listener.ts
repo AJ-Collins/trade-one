@@ -1,24 +1,14 @@
 import { Connection, PublicKey, LAMPORTS_PER_SOL } from '@solana/web3.js';
-import axios from 'axios';
 import { prisma } from '../prisma.js';
 import { creditDeposit } from '../services/depositService.js';
+import { getUsdRate } from '../services/priceService.js';
 import { Coin } from '@prisma/client';
 
 // Helius free tier: 100k credits/day, no CC required — sign up at helius.dev
 // Falls back to public mainnet RPC if env var is missing (rate-limited, dev only)
 const RPC = process.env.HELIUS_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
-async function getUsdRate(): Promise<number> {
-  try {
-    const { data } = await axios.get(
-      'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
-      { timeout: 8_000 },
-    );
-    return data?.solana?.usd ?? 150;
-  } catch {
-    return 150;
-  }
-}
+// USD rate now fetched from centralized priceService (Redis-cached + stale fallback)
 
 async function checkAddress(
   address: string,
@@ -49,7 +39,7 @@ async function checkAddress(
     const addrIndex = accountKeys.findIndex(k => k.toBase58() === address);
     if (addrIndex === -1) continue;
 
-    const preBalance  = tx.meta.preBalances[addrIndex]  ?? 0;
+    const preBalance = tx.meta.preBalances[addrIndex] ?? 0;
     const postBalance = tx.meta.postBalances[addrIndex] ?? 0;
     const deltaLamports = postBalance - preBalance;
 
@@ -57,8 +47,8 @@ async function checkAddress(
     if (deltaLamports <= 0) continue;
 
     const amountSOL = deltaLamports / LAMPORTS_PER_SOL;
-    const usdRate   = await getUsdRate();
-    const usdValue  = amountSOL * usdRate;
+    const usdRate = await getUsdRate('SOL');
+    const usdValue = amountSOL * usdRate;
 
     const deposit = await creditDeposit(
       sigInfo.signature,
@@ -78,8 +68,12 @@ async function checkAddress(
 }
 
 async function poll(connection: Connection) {
+  // Only poll for USER-role deposit addresses — skip MARKETERs
   const addresses = await prisma.depositAddress.findMany({
-    where: { network: 'solana_mainnet' },
+    where: {
+      network: 'solana_mainnet',
+      user: { role: 'USER' },
+    },
     select: { address: true, userId: true },
   });
 

@@ -41,22 +41,42 @@ export const NETWORK_WEBHOOK_MAP: Partial<Record<SupportedNetwork, string>> = {
   arbitrum_mainnet: process.env.ALCHEMY_WEBHOOK_ARBITRUM,
 };
 
-export const STABLECOIN_CONTRACTS: Partial<Record<SupportedNetwork, Record<string, { symbol: string; decimals: number }>>> = {
-  eth_mainnet: {
-    [process.env.ETH_USDT_CONTRACT?.toLowerCase() || '']: { symbol: 'USDT', decimals: 6 },
-    [process.env.ETH_USDC_CONTRACT?.toLowerCase() || '']: { symbol: 'USDC', decimals: 6 },
-  },
-  bsc_mainnet: {
-    // Note: BEP20 tokens on BSC natively use 18 decimals
-    [process.env.BSC_USDT_CONTRACT?.toLowerCase() || '']: { symbol: 'USDT', decimals: 18 },
-    [process.env.BSC_USDC_CONTRACT?.toLowerCase() || '']: { symbol: 'USDC', decimals: 18 },
-  },
-  polygon_mainnet: {
-    [process.env.POLYGON_USDT_CONTRACT?.toLowerCase() || '']: { symbol: 'USDT', decimals: 6 },
-    [process.env.POLYGON_USDC_CONTRACT?.toLowerCase() || '']: { symbol: 'USDC', decimals: 6 },
-  },
-  arbitrum_mainnet: {
-    [process.env.ARBITRUM_USDT_CONTRACT?.toLowerCase() || '']: { symbol: 'USDT', decimals: 6 },
-    [process.env.ARBITRUM_USDC_CONTRACT?.toLowerCase() || '']: { symbol: 'USDC', decimals: 6 },
-  },
+import { getConfig } from '../utils/configLoader.js';
+
+export async function getStablecoinContracts(network: SupportedNetwork) {
+  const contracts: Record<string, { symbol: string; decimals: number }> = {};
+  
+  if (network === 'eth_mainnet') {
+    const usdt = await getConfig('ETH_USDT_CONTRACT');
+    const usdc = await getConfig('ETH_USDC_CONTRACT');
+    if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 6 };
+    if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 6 };
+  } else if (network === 'bsc_mainnet') {
+    const usdt = await getConfig('BSC_USDT_CONTRACT');
+    const usdc = await getConfig('BSC_USDC_CONTRACT');
+    if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 18 };
+    if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 18 };
+  } else if (network === 'polygon_mainnet') {
+    const usdt = await getConfig('POLYGON_USDT_CONTRACT');
+    const usdc = await getConfig('POLYGON_USDC_CONTRACT');
+    if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 6 };
+    if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 6 };
+  } else if (network === 'arbitrum_mainnet') {
+    const usdt = await getConfig('ARBITRUM_USDT_CONTRACT');
+    const usdc = await getConfig('ARBITRUM_USDC_CONTRACT');
+    if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 6 };
+    if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 6 };
+  }
+  
+  return contracts;
+}
+
+// Maps internal network keys to their RPC config key (used by deposit worker
+// to re-fetch live confirmation counts on retry instead of trusting stale
+// webhook payload data).
+export const NETWORK_RPC_CONFIG_KEY: Partial<Record<SupportedNetwork, string>> = {
+  eth_mainnet:      'ETH_MAINNET_RPC',
+  bsc_mainnet:      'BSC_MAINNET_RPC',
+  polygon_mainnet:  'POLYGON_MAINNET_RPC',
+  arbitrum_mainnet: 'ARBITRUM_MAINNET_RPC',
 };

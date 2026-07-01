@@ -1,19 +1,22 @@
 import { Coin } from '@prisma/client';
 import { Worker, Job } from 'bullmq';
+import { ethers } from 'ethers';
 import { redis } from '../lib/redis.js';
 import { prisma } from '../prisma.js';
 import { creditDeposit } from '../services/depositService.js';
 import { getUsdRate } from '../services/priceService.js';
+import { getConfig } from '../utils/configLoader.js';
 import {
   NATIVE_COIN,
-  STABLECOIN_CONTRACTS,
+  getStablecoinContracts,
+  NETWORK_RPC_CONFIG_KEY,
   SupportedNetwork,
 } from '../config/networks.js';
 import { DEPOSIT_QUEUE_NAME, DepositActivityJob } from '../queues/depositQueue.js';
 
 const MIN_CONFIRMATIONS: Record<SupportedNetwork, number> = {
   eth_mainnet:      12,
-  bsc_mainnet:      15, // Added standard mainnet confirmation threshold
+  bsc_mainnet:      15,
   polygon_mainnet:  64,
   arbitrum_mainnet: 1,
   btc_mainnet:      2,
@@ -22,14 +25,15 @@ const MIN_CONFIRMATIONS: Record<SupportedNetwork, number> = {
   tron_mainnet:     20,
 };
 
-function resolveCoinForActivity(activity: any, network: SupportedNetwork) {
+async function resolveCoinForActivity(activity: any, network: SupportedNetwork) {
   const contractAddress: string | undefined = activity.rawContract?.address?.toLowerCase();
 
   if (!contractAddress) {
     return { coin: NATIVE_COIN[network], decimals: 18 };
   }
 
-  const known = STABLECOIN_CONTRACTS[network]?.[contractAddress];
+  const contracts = await getStablecoinContracts(network);
+  const known = contracts[contractAddress];
   if (!known) {
     console.warn(
       `[DepositWorker] Unrecognized contract ${contractAddress} on ${network} (asset: ${activity.asset})`
@@ -67,6 +71,35 @@ function resolveAmount(activity: any, expectedDecimals: number): number | null {
   return decodedValue;
 }
 
+/**
+ * Fetch the LIVE confirmation count from the chain via RPC.
+ * Used on retries (attemptsMade > 0) because the Alchemy webhook payload
+ * contains a frozen confirmation count from the moment the webhook was fired,
+ * which never increases on BullMQ retries.
+ */
+async function getLiveConfirmations(
+  txHash: string,
+  network: SupportedNetwork,
+): Promise<number | null> {
+  const rpcConfigKey = NETWORK_RPC_CONFIG_KEY[network];
+  if (!rpcConfigKey) return null;
+
+  const rpcUrl = await getConfig(rpcConfigKey);
+  if (!rpcUrl) return null;
+
+  try {
+    const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
+    const receipt = await provider.getTransactionReceipt(txHash);
+    if (!receipt?.blockNumber) return null;
+
+    const currentBlock = await provider.getBlockNumber();
+    return currentBlock - receipt.blockNumber + 1;
+  } catch (err: any) {
+    console.warn(`[DepositWorker] RPC confirmation check failed for ${txHash}:`, err.message);
+    return null;
+  }
+}
+
 async function processActivity(job: Job<DepositActivityJob>) {
   const { network, activity } = job.data;
   const internalNetwork = network as SupportedNetwork;
@@ -77,26 +110,45 @@ async function processActivity(job: Job<DepositActivityJob>) {
 
   const depositAddress = await prisma.depositAddress.findFirst({
     where: { address: { equals: toAddr, mode: 'insensitive' }, network: internalNetwork },
+    include: { user: { select: { role: true } } },
   });
   if (!depositAddress) return;
 
-  const confirmations: number = activity.confirmations ?? 0;
+  // Only process deposits for USER role — do not touch MARKETER logic
+  if (depositAddress.user.role !== 'USER') return;
+
+  // ── Confirmation check ─────────────────────────────────────────────────
+  // On the first attempt, use the webhook payload's confirmation count.
+  // On retries (attemptsMade > 0), fetch the LIVE count from the chain
+  // because the webhook payload is frozen and never updates.
+  let confirmations: number = activity.confirmations ?? 0;
+  const txHash: string = activity.hash;
   const minRequired = MIN_CONFIRMATIONS[internalNetwork];
+
+  if (job.attemptsMade > 0 && txHash) {
+    const liveConfs = await getLiveConfirmations(txHash, internalNetwork);
+    if (liveConfs !== null) {
+      confirmations = liveConfs;
+      console.log(
+        `[DepositWorker] Retry #${job.attemptsMade}: live confirmations for ${txHash} = ${confirmations}/${minRequired}`
+      );
+    }
+  }
+
   if (confirmations < minRequired) {
     // Throwing here triggers BullMQ's retry/backoff instead of silently dropping —
-    // by the time it retries (5s/10s/20s...) more confirmations will likely have landed.
+    // on the next retry we'll re-fetch the live confirmation count from the chain.
     throw new Error(
-      `tx ${activity.hash} has ${confirmations}/${minRequired} confirmations on ${internalNetwork} — retrying`
+      `tx ${txHash} has ${confirmations}/${minRequired} confirmations on ${internalNetwork} — retrying`
     );
   }
 
-  const resolved = resolveCoinForActivity(activity, internalNetwork);
+  const resolved = await resolveCoinForActivity(activity, internalNetwork);
   if (!resolved) return; // unrecognized contract — not a transient failure, don't retry
 
   const value = resolveAmount(activity, resolved.decimals);
   if (value === null) return; // bad/inconsistent amount — don't retry, log already happened
 
-  const txHash: string = activity.hash;
   if (!txHash) return;
 
   const usdRate = await getUsdRate(resolved.coin); // throws -> job retries automatically
@@ -114,6 +166,7 @@ async function processActivity(job: Job<DepositActivityJob>) {
     internalNetwork,
     value,
     usdValue,
+    depositAddress.id, // pass the ID directly so creditDeposit doesn't need to re-lookup
   );
 
   if (deposit) {

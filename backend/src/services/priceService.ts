@@ -1,12 +1,22 @@
 import axios from 'axios';
 import { redis } from '../lib/redis.js';
 
-type PricedCoin = 'ETH' | 'BNB';
+type PricedCoin = 'ETH' | 'BNB' | 'BTC' | 'SOL' | 'TRX' | 'TON' | 'MATIC' | 'LTC' | 'DOGE' | 'XRP';
 
 const COINGECKO_IDS: Record<PricedCoin, string> = {
-  ETH: 'ethereum',
-  BNB: 'binancecoin',
+  ETH:   'ethereum',
+  BNB:   'binancecoin',
+  BTC:   'bitcoin',
+  SOL:   'solana',
+  TRX:   'tron',
+  TON:   'the-open-network',
+  MATIC: 'matic-network',
+  LTC:   'litecoin',
+  DOGE:  'dogecoin',
+  XRP:   'ripple',
 };
+
+const SUPPORTED_PRICED_COINS = new Set<string>(Object.keys(COINGECKO_IDS));
 
 const CACHE_TTL_SECONDS = 30; // matches old in-memory TTL
 const STALE_FALLBACK_TTL_SECONDS = 60 * 10; // keep a stale value around for 10 min as last-resort fallback
@@ -36,7 +46,7 @@ export async function getUsdRate(coin: string): Promise<number> {
   const upper = coin.toUpperCase();
   if (upper === 'USDT' || upper === 'USDC') return 1;
 
-  if (upper !== 'ETH' && upper !== 'BNB') {
+  if (!SUPPORTED_PRICED_COINS.has(upper)) {
     throw new Error(`No price feed configured for coin: ${coin}`);
   }
   const pricedCoin = upper as PricedCoin;
