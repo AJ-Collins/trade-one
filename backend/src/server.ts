@@ -84,6 +84,8 @@ app.use('/api/kyc', kycRoutes);
 const server = http.createServer(app);
 setupWebSocket(server);
 
+import { getConfig } from './utils/configLoader.js';
+
 server.listen(port, '0.0.0.0', async () => {
   console.log(`Server running on port: http://localhost:${port}`);
   try {
@@ -93,7 +95,8 @@ server.listen(port, '0.0.0.0', async () => {
     console.error("Critical runtime error while restoring engine background bots:", err);
   }
 
-  if (process.env.ALCHEMY_AUTH_TOKEN) {
+  const alchemyAuthToken = await getConfig('ALCHEMY_AUTH_TOKEN');
+  if (alchemyAuthToken) {
     syncExistingAddressesWithAlchemy().catch(err =>
       console.error('Alchemy sync failed:', err.message)
     );

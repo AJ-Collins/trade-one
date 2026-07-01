@@ -5,7 +5,7 @@ import { ALCHEMY_NETWORK_MAP } from '../config/networks.js';
 import { enqueueDepositActivity } from '../queues/depositQueue.js';
 import { getConfig } from '../utils/configLoader.js';
 
-const ALCHEMY_SIGNING_KEY = process.env.ALCHEMY_SIGNING_KEY!;
+
 
 async function verifyAlchemySignature(req: RawBodyRequest): Promise<boolean> {
   const signature = req.headers['x-alchemy-signature'] as string | undefined;

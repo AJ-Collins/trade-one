@@ -682,11 +682,13 @@ static async manualCreditDeposit(data: {
 
   const { ethers } = await import('ethers');
 
-  const RPC_MAP: Record<string, string> = {
-    eth_mainnet:      process.env.ETH_MAINNET_RPC!,
-    bsc_mainnet:      process.env.BSC_MAINNET_RPC!,
-    polygon_mainnet:  process.env.POLYGON_MAINNET_RPC!,
-    arbitrum_mainnet: process.env.ARBITRUM_MAINNET_RPC!,
+  const { getConfig } = await import('../utils/configLoader.js');
+
+  const RPC_MAP: Record<string, string | null> = {
+    eth_mainnet:      await getConfig('ETH_MAINNET_RPC'),
+    bsc_mainnet:      await getConfig('BSC_MAINNET_RPC'),
+    polygon_mainnet:  await getConfig('POLYGON_MAINNET_RPC'),
+    arbitrum_mainnet: await getConfig('ARBITRUM_MAINNET_RPC'),
   };
 
   let foundTx: any = null;
