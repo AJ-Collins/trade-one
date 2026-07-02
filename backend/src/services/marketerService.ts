@@ -108,7 +108,6 @@ export class MarketerService {
       },
     });
 
-    // ← Trigger the simulation so virtual wallet gets credited
     DepositSimulationService.simulateMarketerProcessing(deposit.id, network);
 
     return {

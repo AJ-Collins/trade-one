@@ -2,6 +2,7 @@ import { prisma } from '../prisma.js';
 import { Prisma } from '@prisma/client';
 import { WithdrawalSimulationService } from './withdrawalSimulationService.js';
 import { calculateGasFee } from '../utils/gasFees.js';
+import { enqueueEmail } from '../queues/emailQueue.js';
 
 const MINIMUM_WITHDRAWAL = new Prisma.Decimal(500);
 
@@ -45,7 +46,7 @@ export class WithdrawalService {
     const [user, account] = await Promise.all([
       prisma.user.findUnique({
         where: { id: data.userId },
-        select: { role: true, kycStatus: true },
+        select: { role: true, kycStatus: true, referrerId: true },
       }),
       prisma.account.findUnique({
         where: { id: data.accountId },

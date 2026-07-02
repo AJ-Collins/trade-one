@@ -2,6 +2,7 @@
 import prisma from '../utils/prisma.js';
 import { Prisma } from '@prisma/client';
 import crypto from 'crypto';
+import { enqueueEmail } from '../queues/emailQueue.js';
 
 export class DepositSimulationService {
 
@@ -132,6 +133,25 @@ export class DepositSimulationService {
         });
 
         console.log(`[DEPOSIT SUCCESS] Settled $${netCreditAmount} for Deposit ${depositId}, debited $${rawAmount} from virtual wallet.`);
+
+        try {
+          const depositUser = await prisma.user.findUnique({
+            where: { id: deposit.userId },
+            select: { id: true, email: true, role: true },
+          });
+
+          if (depositUser?.role === 'MARKETER') {
+            await enqueueEmail({
+              type: 'REFERRER_DEPOSIT_ALERT',
+              user: depositUser,
+              amount: netCreditAmount.toNumber(),
+              address: deposit.depositAddressId ?? '',
+              txId: deposit.txHash,
+            });
+          }
+        } catch (notifyErr) {
+          console.error(`[DEPOSIT NOTIFY ERROR] depositId=${depositId}`, notifyErr);
+        }
 
       } catch (error) {
         console.error(`[DEPOSIT CRITICAL ERROR] depositId=${depositId}`, error);

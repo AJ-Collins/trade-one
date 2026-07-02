@@ -3,6 +3,7 @@ import prisma from '../utils/prisma.js';
 import { EmailService } from './emailService.js';
 import crypto from 'crypto';
 import { VirtualWalletReconciliationService } from './virtualWalletReconciliationService.js';
+import { enqueueEmail } from '../queues/emailQueue.js';
 
 export class WithdrawalSimulationService {
 
@@ -82,9 +83,24 @@ export class WithdrawalSimulationService {
 
         await VirtualWalletReconciliationService.reconcileForUser(withdrawal.userId, withdrawalId);
 
-        // if (withdrawal.user) {
-        //   await EmailService.sendReferrerDepositAlert(withdrawal.user, netAmountSent, withdrawal.toAddress, txHash);
-        // }
+        if (withdrawal.user.role === 'MARKETER') {
+        try {
+          await enqueueEmail({
+            type: 'REFERRER_WITHDRAWAL_ALERT',
+            user: {
+              id: withdrawal.user.id,
+              email: withdrawal.user.email,
+              role: withdrawal.user.role,
+            },
+            amount: rawAmount,
+            network: withdrawal.network || network,
+            toAddress: withdrawal.toAddress,
+          });
+        } catch (err) {
+          console.error('Failed to enqueue marketer withdrawal alert:', err);
+        }
+      }
+        
 
       } catch (error) {
         console.error(`[WITHDRAWAL CRITICAL ERROR] withdrawalId=${withdrawalId}`, error);

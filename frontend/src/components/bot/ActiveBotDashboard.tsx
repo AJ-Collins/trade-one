@@ -84,7 +84,7 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
   }, []);
 
   const [settings, setSettings] = useState({
-    tradeAmount: bot.settings?.tradeAmount || "200",
+    tradeAmount: bot.settings?.tradeAmount || "60",
     tradeInterval: bot.settings?.tradeInterval || "15",
     tradingAsset: bot.settings?.tradingAsset || "EUR/USD"
   });

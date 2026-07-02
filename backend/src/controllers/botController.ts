@@ -1,3 +1,6 @@
+import { Prisma } from "@prisma/client";
+import { AuthRequest } from '../middleware/auth';
+import { prisma } from "../prisma.js";
 import { Request, Response } from "express";
 import { BotService } from "../services/botService.js";
 import * as BotEngineService from "../services/botEngineService.js";
@@ -141,9 +144,14 @@ export class BotController {
     }
   }
 
-  static async updateBotSettings(req: Request, res: Response) {
+  static async updateBotSettings(req: AuthRequest, res: Response) {
     try {
+      if (!req.userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
       const id = Number(req.params.id);
+      const userId = req.userId;
       const settings = req.body.settings;
 
       if (!settings) {
@@ -151,8 +159,30 @@ export class BotController {
       }
 
       const tradeAmount = parseFloat(settings.tradeAmount);
-      if (isNaN(tradeAmount) || tradeAmount < 200 || tradeAmount > 100000) {
-        return res.status(400).json({ error: "Trade amount must be between $200 and $100,000" });
+      if (isNaN(tradeAmount) || tradeAmount <= 0) {
+        return res.status(400).json({ error: "Trade amount must be a valid amount greater than zero" });
+      }
+
+      const realAccount = await prisma.account.findUnique({
+        where: { userId_type: { userId, type: 'REAL' } },
+        select: { balance: true },
+      });
+
+      if (!realAccount) {
+        return res.status(400).json({ error: "No account found for this user" });
+      }
+
+      const balance = new Prisma.Decimal(realAccount.balance);
+
+      if (balance.equals(0)) {
+        return res.status(400).json({ error: "Your account balance is insufficient." });
+      }
+
+      if (balance.lessThan(tradeAmount)) {
+        const shortfall = new Prisma.Decimal(tradeAmount).sub(balance);
+        return res.status(400).json({
+          error: `Insufficient balance. Please top up $${shortfall.toFixed(2)} more to set this trade amount.`,
+        });
       }
 
       const VALID_INTERVALS = ["15", "30", "60", "120", "180", "240", "300"];
