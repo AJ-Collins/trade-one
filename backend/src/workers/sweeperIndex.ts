@@ -3,7 +3,7 @@ import { startERC20Sweeper } from '../sweepers/erc20-sweeper.js';
 import { startBTCSweeper }  from '../sweepers/btc-sweeper.js';
 import { startSOLSweeper }  from '../sweepers/solana-sweeper.js';
 import { startTONSweeper }  from '../sweepers/ton-sweeper.js';
-import { startTronSweeper } from '../sweepers/tron-sweeper.js';
+import { startTronSweeper,startTRC20Sweeper } from '../sweepers/tron-sweeper.js';
 
 // Define which production EVM networks have active stablecoin sweepers
 const ERC20_NETWORKS: Record<string, string[]> = {
@@ -37,6 +37,7 @@ startBTCSweeper('btc_mainnet', INTERVAL);
 startSOLSweeper(INTERVAL);
 startTONSweeper(INTERVAL);
 startTronSweeper(INTERVAL);
+startTRC20Sweeper('USDT', INTERVAL);
 
 console.log('[SweeperWorker] All sweepers started.');
 

@@ -39,6 +39,7 @@ export const SYSTEM_CONFIG_DEFINITIONS = [
   { key: 'TRON_RPC',                    label: 'Tron RPC URL',                    group: 'TRON',      isSensitive: false },
   { key: 'TRONGRID_API_KEY',            label: 'TronGrid API Key',                group: 'TRON',      isSensitive: true  },
   { key: 'HOT_WALLET_TRX_ADDRESS',      label: 'TRX Hot Wallet Address',          group: 'TRON',      isSensitive: false },
+  { key: 'HOT_WALLET_TRX_PRIVATE_KEY',  label: 'TRX Hot Wallet Private Key',      group: 'TRON',      isSensitive: true  },
   // HD Wallet
   { key: 'MASTER_MNEMONIC',             label: 'Master Mnemonic (HD Wallet)',     group: 'HD_WALLET', isSensitive: true  },
   // Alchemy
