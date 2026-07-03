@@ -115,6 +115,16 @@ export async function creditDeposit(
   usdValue: number,
   depositAddressId?: string,
 ) {
+  // Cheap indexed pre-check — avoids hitting the DB constraint (and logging
+  // a Postgres ERROR) every poll cycle for transactions we've already credited.
+  const alreadyExists = await prisma.deposit.findUnique({
+    where: { txHash },
+    select: { id: true },
+  });
+  if (alreadyExists) {
+    return null; // silent skip — this is the expected, common case on every poll
+  }
+  
   // If a depositAddressId was passed (e.g. from the deposit worker which already
   // resolved it), use it directly. Otherwise fall back to a flexible lookup that
   // finds ANY matching address for this user on this network — this handles the
