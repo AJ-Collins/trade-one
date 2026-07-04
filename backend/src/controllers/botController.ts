@@ -153,14 +153,17 @@ export class BotController {
       const id = Number(req.params.id);
       const userId = req.userId;
       const settings = req.body.settings;
+      const MIN_TRADE_AMOUNT = new Prisma.Decimal(60);
 
       if (!settings) {
         return res.status(400).json({ error: "Settings payload missing" });
       }
 
       const tradeAmount = parseFloat(settings.tradeAmount);
-      if (isNaN(tradeAmount) || tradeAmount <= 0) {
-        return res.status(400).json({ error: "Trade amount must be a valid amount greater than zero" });
+      if (isNaN(tradeAmount)) {
+        return res.status(400).json({
+          error: "Trade amount must be a valid number.",
+        });
       }
 
       const realAccount = await prisma.account.findUnique({
@@ -175,13 +178,35 @@ export class BotController {
       const balance = new Prisma.Decimal(realAccount.balance);
 
       if (balance.equals(0)) {
-        return res.status(400).json({ error: "Your account balance is insufficient." });
+        return res.status(400).json({
+          error: "Your account balance is insufficient.",
+        });
       }
 
       if (balance.lessThan(tradeAmount)) {
         const shortfall = new Prisma.Decimal(tradeAmount).sub(balance);
+
         return res.status(400).json({
-          error: `Insufficient balance. Please top up $${shortfall.toFixed(2)} more to set this trade amount.`,
+          error: `Insufficient balance. Please top up $${shortfall.toFixed(
+            2
+          )} more to set this trade amount.`,
+        });
+      }
+
+      if (balance.lessThan(MIN_TRADE_AMOUNT)) {
+        const shortfall = MIN_TRADE_AMOUNT.sub(balance);
+
+        return res.status(400).json({
+          error: `Insufficient balance. Please top up $${shortfall.toFixed(
+            2
+          )} more to place trades.`,
+        });
+      }
+
+      // User has enough balance, but selected an invalid trade amount
+      if (tradeAmount < MIN_TRADE_AMOUNT.toNumber()) {
+        return res.status(400).json({
+          error: "Trade amount must be at least $60.00.",
         });
       }
 

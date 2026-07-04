@@ -21,6 +21,7 @@ import UserProfilePage from "./pages/UserProfilePage";
 import UserDepositsPage from "./pages/DepositsPage";
 import WithrawalsPage from "./pages/WithrawalsPage";
 import HistoryPage from "./pages/HistoryPage";
+import TradesHistory from "./pages/TradesHistory";
 
 // Admin
 import AdminLayout from "./components/admin/Layout";
@@ -59,6 +60,7 @@ export default function App() {
                 <Route path="/profile" element={<UserProfilePage />} />
                 <Route path="/deposit" element={<UserDepositsPage />} />
                 <Route path="/withdraw" element={<WithrawalsPage />} />
+                <Route path="/trades" element={<TradesHistory />} />
                 <Route path="/history" element={<HistoryPage />} />
               </Route>
             </Route>

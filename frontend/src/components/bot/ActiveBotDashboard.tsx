@@ -40,6 +40,28 @@ const ASSET_OPTIONS = [
   { label: "NZD/USD", value: "NZD/USD", flags: ["https://flagcdn.com/w40/nz.png", "https://flagcdn.com/w40/us.png"] },
 ];
 
+interface Trade {
+  id: string;
+  user: string;
+  asset: string;
+  type: string;
+  stake: number;
+  payout: number;
+  profit: number;
+  entryPrice: number;
+  exitPrice: number;
+  status: string;
+  startTime: string;
+  endTime: string | null;
+  createdAt: string;
+}
+
+const tradeStatusStyles: Record<string, string> = {
+  COMPLETED: "bg-emerald-500/15 text-emerald-400",
+  RUNNING:   "bg-amber-500/15 text-amber-400",
+  STOPPED:   "bg-gray-500/15 text-gray-400",
+};
+
 // Parses an EXECUTION log line and returns notif data if it's a closed trade
 function parseTradeNotif(logLine: string): Omit<TradeNotif, 'id'> | null {
   // Matches: [EXECUTION] ✓ WIN — Closed BUY on EUR/USD @ ... | Profit: +$4.20 | ...
@@ -290,6 +312,24 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
 
   const totalIntervalSeconds = serverInterval || parseInt(settings.tradeInterval);
   const realProgressPercentage = Math.max(0, Math.min(100, ((totalIntervalSeconds - timeLeft) / totalIntervalSeconds) * 100));
+
+  // Fetch the 20 latest trades for the history view
+  const { data: tradesData, isLoading: isTradesLoading } = useQuery({
+    queryKey: ["user-trades-dashboard", bot.id],
+    queryFn: async () => {
+      const { data } = await api.get("/user/trades", {
+        params: {
+          page: 1,
+          limit: 20,
+        },
+      });
+      return data as { trades: Trade[]; total: number };
+    },
+    // Automatically refresh the trades feed every 4 seconds if the bot is actively running
+    refetchInterval: status === "running" ? 4000 : false,
+  });
+
+  const dashboardTrades = tradesData?.trades ?? [];
 
   return (
     <div className="space-y-4 text-left">
@@ -571,6 +611,78 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
             )}
             <div ref={terminalEndRef} />
           </div>
+        </div>
+      </div>
+
+      {/* Trades History (Only 10 limit) */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between px-1">
+          <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Activity className="w-3 h-3 text-[#39ff88]" />
+            Recent Trades History
+          </span>
+        </div>
+
+        <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-xl overflow-hidden max-h-[420px] overflow-y-auto scrollbar-thin scrollbar-thumb-[#1a1f28] scrollbar-track-transparent">
+          {isTradesLoading ? (
+            /* Skeleton Loading State */
+            <div className="divide-y divide-[#1a1f28] p-4 space-y-4">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="space-y-3 pt-4 first:pt-0 animate-pulse">
+                  <div className="flex justify-between items-center">
+                    <div className="h-4 bg-[#1a1f28] rounded w-28" />
+                    <div className="h-5 bg-[#1a1f28] rounded w-16" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="h-3 bg-[#1a1f28] rounded w-12" />
+                    <div className="h-3 bg-[#1a1f28] rounded w-12" />
+                    <div className="h-3 bg-[#1a1f28] rounded w-12 justify-self-end" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : dashboardTrades.length > 0 ? (
+            /* Stacked Card Render Container */
+            <div className="divide-y divide-[#1a1f28]">
+              {dashboardTrades.map((t) => (
+                <div key={t.id} className="p-4 space-y-3 hover:bg-white/[0.01] transition-colors text-left">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-white text-base">{t.asset}</span>
+                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${t.type === "WIN" ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"}`}>
+                        {t.type}
+                      </span>
+                    </div>
+                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${tradeStatusStyles[t.status] ?? tradeStatusStyles.STOPPED}`}>
+                      {t.status}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2 text-xs border-t border-[#1a1f28]/50 pt-2">
+                    <div>
+                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Stake</p>
+                      <p className="text-gray-300 font-medium">${t.stake.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Payout</p>
+                      <p className="text-gray-300 font-medium">${t.payout.toFixed(2)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">P&L</p>
+                      <p className={`font-bold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                        {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* Empty Data State */
+            <div className="text-center py-8 text-gray-500 text-xs font-mono">
+              No recent trades found.
+            </div>
+          )}
         </div>
       </div>
     </div>

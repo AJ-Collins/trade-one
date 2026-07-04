@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { UserService } from '../services/userService.js';
 import { WithdrawalService } from '../services/withdrawalService.js';
 import { AccountBalanceDTO } from '../types/auth.types';
+import { AuthRequest } from "../middleware/auth";
+import { truncateString, clampPageAndLimit } from '../utils/validators.js';
 
 export class UserController {
   static async getAccountBalance(req: Request, res: Response<AccountBalanceDTO | { message: string }>) {
@@ -77,6 +79,23 @@ export class UserController {
     } catch (err: any) {
       console.error('requestWithdrawal error:', err);
       return res.status(400).json({ error: err.message || 'Failed to request withdrawal' });
+    }
+  }
+
+  static async getUserTrades(req: AuthRequest, res: Response) {
+    try {
+      const userId = req.userId;
+      if (!userId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const search = truncateString(req.query.search as string, 100);
+      const { page, limit } = clampPageAndLimit(req.query.page as string, req.query.limit as string);
+      
+      const result = await UserService.getUserTrades(userId, search || undefined, page, limit);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
     }
   }
 }

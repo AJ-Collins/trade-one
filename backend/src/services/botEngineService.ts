@@ -2,11 +2,15 @@ import { LogLevel } from "@prisma/client";
 import { tradeQueue, redisPub } from '../queues/tradeQueue.js';
 import { prisma } from "../prisma.js";
 
+// const MARKETER_CONFIG = {
+//   winRate: 0.91,       // % win rate
+//   avgWinPct: 0.028,    // % avg win
+//   avgLossPct: 0.004,   // % avg loss
+//   payoutVarPct: 0.08,   // low variance — consistent results
+// } as const;
 const MARKETER_CONFIG = {
-  winRate: 0.91,       // 82% win rate
-  avgWinPct: 0.028,    // 1.8% avg win
-  avgLossPct: 0.004,   // 0.6% avg loss
-  payoutVarPct: 0.08,   // low variance — consistent results
+  winRate: 0.91,
+  fixedProfit: true,
 } as const;
 
 type Broadcaster = (proBotId: number, payload: any) => void;
@@ -28,14 +32,46 @@ export async function broadcast(proBotId: number, payload: any) {
   }
 }
 
+// function simulateTrade(tradeAmount: number, cfg: any) {
+//   const isWin = Math.random() < cfg.winRate;
+//   const basePct = isWin ? cfg.avgWinPct : cfg.avgLossPct;
+//   const variance = 1 + (Math.random() * 2 - 1) * cfg.payoutVarPct;
+//   const pct = Math.max(0.0001, basePct * variance);
+//   const pnl = isWin ? tradeAmount * pct : -tradeAmount * pct;
+//   const direction = Math.random() < 0.5 ? "BUY" : "SELL";
+//   return { isWin, pnl: Math.round(pnl * 100) / 100, direction };
+// }
+
 function simulateTrade(tradeAmount: number, cfg: any) {
   const isWin = Math.random() < cfg.winRate;
-  const basePct = isWin ? cfg.avgWinPct : cfg.avgLossPct;
-  const variance = 1 + (Math.random() * 2 - 1) * cfg.payoutVarPct;
-  const pct = Math.max(0.0001, basePct * variance);
-  const pnl = isWin ? tradeAmount * pct : -tradeAmount * pct;
-  const direction = Math.random() < 0.5 ? "BUY" : "SELL";
-  return { isWin, pnl: Math.round(pnl * 100) / 100, direction };
+
+  let pnl: number;
+
+  if (cfg.fixedProfit) {
+    if (isWin) {
+      // 18–25% return on the stake
+      const pct = 0.18 + Math.random() * 0.07;
+      pnl = tradeAmount * pct;
+    } else {
+      // 2–5% loss on the stake
+      const pct = 0.02 + Math.random() * 0.03;
+      pnl = -(tradeAmount * pct);
+    }
+  } else {
+    const basePct = isWin ? cfg.avgWinPct : cfg.avgLossPct;
+    const variance = 1 + (Math.random() * 2 - 1) * cfg.payoutVarPct;
+    const pct = Math.max(0.0001, basePct * variance);
+
+    pnl = isWin
+      ? tradeAmount * pct
+      : -(tradeAmount * pct);
+  }
+
+  return {
+    isWin,
+    pnl: Math.round(pnl * 100) / 100,
+    direction: Math.random() < 0.5 ? "BUY" : "SELL",
+  };
 }
 
 export async function log(proBotId: number, message: string, level: LogLevel = "INFO") {

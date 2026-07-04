@@ -11,5 +11,6 @@ router.get('/account/balance', UserController.getAccountBalance);
 router.post("/password", UserController.updatePassword);
 router.get("/withdraw/history", UserController.getWithdrawalHistory);
 router.post("/withdraw", UserController.requestWithdrawal);
+router.get("/trades", UserController.getUserTrades);
 
 export default router;

@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { to: "/trade", label: "Bots", icon: Bot },
   { to: "/deposit", label: "Deposit", icon: ArrowDownToLine },
   { to: "/withdraw", label: "Withdraw", icon: ArrowUpFromLine },
+  { to: "/trades", label: "Trades History", icon: History },
   { to: "/history", label: "History", icon: History },
 ];
 
