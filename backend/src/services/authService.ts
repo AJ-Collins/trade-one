@@ -45,7 +45,8 @@ export class AuthService {
    * Registers a new platform user and auto-provisions structural sub-accounts.
    */
   static async register(userData: RegisterInput): Promise<AuthResponse> {
-    const { email, password, referrerId } = userData;
+    const { password, referrerId } = userData;
+    const email = userData.email.trim().toLowerCase();
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -86,8 +87,9 @@ export class AuthService {
    */
   static async login(credentials: LoginInput): Promise<AuthResponse> {
     const { email, password } = credentials;
+    const emailTrimmed = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: emailTrimmed },
       include: { accounts: true }
     });
 
@@ -117,7 +119,8 @@ export class AuthService {
    * Protects against user enumeration attacks by returning a generic success response.
    */
   static async forgotPassword(email: string): Promise<{ message: string }> {
-    const user = await prisma.user.findUnique({ where: { email } });
+    const emailTrimmed = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({ where: { email: emailTrimmed } });
 
     // Mitigate enumeration vector
     if (!user) {
