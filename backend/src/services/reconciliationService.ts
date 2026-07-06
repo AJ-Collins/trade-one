@@ -72,42 +72,43 @@ async function reconcileNetwork(network: SupportedNetwork) {
 
   for (const [address, { userId, addressIds }] of uniqueAddresses) {
     try {
-      // ── Check native coin balance ──────────────────────────────────────
       const nativeBalance = await provider.getBalance(address);
       const nativeAmount = parseFloat(ethers.utils.formatEther(nativeBalance));
 
-      // Only credit if balance is meaningful (> $0.50 worth)
       if (nativeAmount > 0) {
         const usdRate = await getUsdRate(nativeCoin);
-        const usdValue = nativeAmount * usdRate;
 
-        if (usdValue >= 0.50) {
-          // Check if we already have a credited deposit for this amount on this address
-          const existing = await prisma.deposit.findFirst({
-            where: {
-              userId,
-              network,
-              coin: nativeCoin,
-              status: { in: ['CREDITED', 'SWEPT'] },
-            },
-            orderBy: { createdAt: 'desc' },
-          });
+        // Sum everything already credited/swept for this user+coin+network,
+        // so a second deposit to the same address isn't silently ignored.
+        const creditedSum = await prisma.deposit.aggregate({
+          where: {
+            userId,
+            network,
+            coin: nativeCoin,
+            status: { in: ['CREDITED', 'SWEPT'] },
+          },
+          _sum: { amount: true },
+        });
+        const alreadyCredited = Number(creditedSum._sum.amount ?? 0);
+        const delta = nativeAmount - alreadyCredited;
 
-          // Only create if no recent deposit exists or the amount differs significantly
-          if (!existing) {
+        // Only credit the uncredited portion, and only if it's meaningful (> $0.50)
+        if (delta > 0) {
+          const usdValue = delta * usdRate;
+
+          if (usdValue >= 0.50) {
             const txHash = `reconcile:${network}:${address}:native:${Date.now()}`;
             const depositAddressId = addressIds.get(nativeCoin) || addressIds.values().next().value;
             if (depositAddressId) {
-              const deposit = await creditDeposit(txHash, userId, nativeCoin, network, nativeAmount, usdValue, depositAddressId);
+              const deposit = await creditDeposit(txHash, userId, nativeCoin, network, delta, usdValue, depositAddressId);
               if (deposit) {
-                console.log(`[Reconciler/${network}] ✅ Credited ${nativeAmount} ${nativeCoin} ($${usdValue.toFixed(2)}) → user ${userId}`);
+                console.log(`[Reconciler/${network}] ✅ Credited ${delta} ${nativeCoin} ($${usdValue.toFixed(2)}) → user ${userId}`);
               }
             }
           }
         }
       }
 
-      // ── Check stablecoin balances ──────────────────────────────────────
       for (const [contractAddr, { symbol, decimals }] of Object.entries(stablecoins)) {
         if (!contractAddr) continue;
         try {
@@ -115,25 +116,27 @@ async function reconcileNetwork(network: SupportedNetwork) {
           const tokenBalance = await tokenContract.balanceOf(address);
           const tokenAmount = parseFloat(ethers.utils.formatUnits(tokenBalance, decimals));
 
-          if (tokenAmount >= 0.50) {
-            const existing = await prisma.deposit.findFirst({
+          if (tokenAmount > 0) {
+            const creditedSum = await prisma.deposit.aggregate({
               where: {
                 userId,
                 network,
                 coin: symbol as Coin,
                 status: { in: ['CREDITED', 'SWEPT'] },
               },
-              orderBy: { createdAt: 'desc' },
+              _sum: { amount: true },
             });
+            const alreadyCredited = Number(creditedSum._sum.amount ?? 0);
+            const delta = tokenAmount - alreadyCredited;
 
-            if (!existing) {
+            if (delta >= 0.50) {
               const txHash = `reconcile:${network}:${address}:${symbol}:${Date.now()}`;
               const depositAddressId = addressIds.get(symbol) || addressIds.values().next().value;
               if (depositAddressId) {
-                const usdValue = tokenAmount * (await getUsdRate(symbol));
-                const deposit = await creditDeposit(txHash, userId, symbol as Coin, network, tokenAmount, usdValue, depositAddressId);
+                const usdValue = delta * (await getUsdRate(symbol));
+                const deposit = await creditDeposit(txHash, userId, symbol as Coin, network, delta, usdValue, depositAddressId);
                 if (deposit) {
-                  console.log(`[Reconciler/${network}] ✅ Credited ${tokenAmount} ${symbol} ($${usdValue.toFixed(2)}) → user ${userId}`);
+                  console.log(`[Reconciler/${network}] ✅ Credited ${delta} ${symbol} ($${usdValue.toFixed(2)}) → user ${userId}`);
                 }
               }
             }
