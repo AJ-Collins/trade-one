@@ -21,6 +21,15 @@ export async function getConfig(key: string): Promise<string | null> {
   return value;
 }
 
+export async function setConfig(key: string, value: string) {
+  await prisma.systemConfig.upsert({
+    where: { key },
+    create: { key, value, isSensitive: false },
+    update: { value },
+  });
+  clearConfigCache(key);
+}
+
 export function clearConfigCache(key?: string) {
   if (key) cache.delete(key);
   else cache.clear();
