@@ -47,13 +47,13 @@ export async function getStablecoinContracts(network: SupportedNetwork) {
   const contracts: Record<string, { symbol: string; decimals: number }> = {};
   
   if (network === 'eth_mainnet') {
-    const usdt = await getConfig('ETH_USDT_CONTRACT');
-    const usdc = await getConfig('ETH_USDC_CONTRACT');
+    const usdt = await getConfig('ETH_MAINNET_USDT_CONTRACT');
+    const usdc = await getConfig('ETH_MAINNET_USDC_CONTRACT');
     if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 6 };
     if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 6 };
   } else if (network === 'bsc_mainnet') {
-    const usdt = await getConfig('BSC_USDT_CONTRACT');
-    const usdc = await getConfig('BSC_USDC_CONTRACT');
+    const usdt = await getConfig('BSC_MAINNET_USDT_CONTRACT');
+    const usdc = await getConfig('BSC_MAINNET_USDC_CONTRACT');
     if (usdt) contracts[usdt.toLowerCase()] = { symbol: 'USDT', decimals: 18 };
     if (usdc) contracts[usdc.toLowerCase()] = { symbol: 'USDC', decimals: 18 };
   } else if (network === 'polygon_mainnet') {
