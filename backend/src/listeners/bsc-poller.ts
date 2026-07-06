@@ -40,30 +40,32 @@ export async function pollBscOnce() {
     const contracts = await getStablecoinContracts(NETWORK);
     const contractAddrs = Object.keys(contracts);
     if (contractAddrs.length) {
-      const logs = await provider.getLogs({
-        fromBlock, toBlock,
-        address: contractAddrs,
-        topics: [TRANSFER_TOPIC, null, addressTopics], // OR-match on "to"
-      } as unknown as ethers.providers.Filter);
-      for (const log of logs) {
-        const to = ethers.utils.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
-        if (!watchedSet.has(to)) continue;
-        const token = contracts[log.address.toLowerCase()];
-        const rawValue = BigInt(log.data).toString();
-
-        await enqueueDepositActivity(NETWORK, {
-          category: 'token',
-          fromAddress: ethers.utils.getAddress('0x' + log.topics[1].slice(26)),
-          toAddress: ethers.utils.getAddress(to),
-          hash: log.transactionHash,
-          value: Number(ethers.utils.formatUnits(rawValue, token.decimals)),
-          asset: token.symbol,
-          rawContract: {
-            address: log.address,
-            decimals: token.decimals,
-            rawValue,
-          },
+      for (const contractAddr of contractAddrs) {
+        const logs = await provider.getLogs({
+          fromBlock, toBlock,
+          address: contractAddr,   // single address now — ethers handles this fine
+          topics: [TRANSFER_TOPIC, null, addressTopics],
         });
+
+        for (const log of logs) {
+          const to = ethers.utils.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
+          if (!watchedSet.has(to)) continue;
+          const token = contracts[log.address.toLowerCase()];
+          const rawValue = BigInt(log.data).toString();
+          await enqueueDepositActivity(NETWORK, {
+            category: 'token',
+            fromAddress: ethers.utils.getAddress('0x' + log.topics[1].slice(26)),
+            toAddress: ethers.utils.getAddress(to),
+            hash: log.transactionHash,
+            value: Number(ethers.utils.formatUnits(rawValue, token.decimals)),
+            asset: token.symbol,
+            rawContract: {
+              address: log.address,
+              decimals: token.decimals,
+              rawValue,
+            },
+          });
+        }
       }
     }
 
