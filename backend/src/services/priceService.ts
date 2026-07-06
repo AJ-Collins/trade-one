@@ -10,7 +10,7 @@ const COINGECKO_IDS: Record<PricedCoin, string> = {
   SOL:   'solana',
   TRX:   'tron',
   TON:   'the-open-network',
-  MATIC: 'matic-network',
+  MATIC: 'polygon-ecosystem-token',
   LTC:   'litecoin',
   DOGE:  'dogecoin',
   XRP:   'ripple',
