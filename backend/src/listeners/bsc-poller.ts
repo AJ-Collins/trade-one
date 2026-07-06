@@ -7,7 +7,7 @@ import { enqueueDepositActivity } from '../queues/depositQueue.js';
 const NETWORK = 'bsc_mainnet';
 const LAST_BLOCK_KEY = 'BSC_POLLER_LAST_BLOCK';
 const CONFIRMATION_LAG = 3;     // blocks to hold back, avoids acting on soon-to-reorg blocks
-const BATCH_SIZE = 200;         // max blocks per cycle
+const BATCH_SIZE = 10;         // max blocks per cycle
 const TRANSFER_TOPIC = ethers.utils.id('Transfer(address,address,uint256)');
 
 let running = false; // prevents overlapping cycles if RPC is slow
