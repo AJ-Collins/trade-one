@@ -16,6 +16,7 @@ import webhookRoutes from './routes/webhookRoutes.js';
 import { setupWebSocket } from "./ws.js";
 import { resumeRunningProBots } from "./services/botEngineService.js";
 import { syncExistingAddressesWithAlchemy } from './services/depositService.js';
+import { startAllEVMFallbackPollers } from './listeners/evm-fallback-poller.js';
 
 dotenv.config();
 const app = express();
@@ -103,4 +104,9 @@ server.listen(port, '0.0.0.0', async () => {
   } else {
     console.warn('⚠ ALCHEMY_AUTH_TOKEN not set — webhook registration disabled');
   }
+
+  // EVM fallback pollers — redundant safety net that catches any deposits the
+  // Alchemy webhook path drops (e.g. AA-bundled txs with missing logIndex).
+  // creditDeposit() dedupes on txHash so this is safe to run alongside webhooks.
+  startAllEVMFallbackPollers();
 });
