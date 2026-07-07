@@ -4,7 +4,7 @@ import { WithdrawalSimulationService } from './withdrawalSimulationService.js';
 import { calculateGasFee } from '../utils/gasFees.js';
 import { enqueueEmail } from '../queues/emailQueue.js';
 
-const MINIMUM_WITHDRAWAL = new Prisma.Decimal(500);
+const MINIMUM_WITHDRAWAL = new Prisma.Decimal(700);
 
 export class WithdrawalService {
   static async validateWithdrawalEligibility(userId: string) {

@@ -650,7 +650,8 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
                     <div className="flex items-center gap-2">
                       <span className="font-bold text-white text-base">{t.asset}</span>
                       <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${t.type === "WIN" ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"}`}>
-                        {t.type}
+                        {/* Updated line below */}
+                        {t.type === "WIN" ? "PROFIT" : t.type}
                       </span>
                     </div>
                     <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${tradeStatusStyles[t.status] ?? tradeStatusStyles.STOPPED}`}>

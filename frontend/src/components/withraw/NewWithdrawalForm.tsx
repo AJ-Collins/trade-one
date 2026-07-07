@@ -66,7 +66,7 @@ export default function NewWithdrawalForm({
   const parseAmount = parseFloat(amountInput) || 0;
   const currentNetworkFee = selectedNetwork ? selectedNetwork.fee : 0;
   const receiveAmount = parseAmount > currentNetworkFee ? parseAmount - currentNetworkFee : 0;
-  const minimumWithdrawal = 500; // Minimum withdrawal amount in USD
+  const minimumWithdrawal = 700; // Minimum withdrawal amount in USD
 
   // Form completeness — drives disabled state
   const isFormComplete =
