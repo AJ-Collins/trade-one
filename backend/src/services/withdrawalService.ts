@@ -4,9 +4,11 @@ import { WithdrawalSimulationService } from './withdrawalSimulationService.js';
 import { calculateGasFee } from '../utils/gasFees.js';
 import { enqueueEmail } from '../queues/emailQueue.js';
 
-const MINIMUM_WITHDRAWAL = new Prisma.Decimal(700);
-
 export class WithdrawalService {
+  static async getMinimumWithdrawalAmount(): Promise<number> {
+    const config = await prisma.withdrawalConfig.findFirst();
+    return config?.minWithdrawalAmount ?? 100;
+  }
   static async validateWithdrawalEligibility(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
@@ -39,8 +41,11 @@ export class WithdrawalService {
   }) {
     const amount = new Prisma.Decimal(data.amount);
 
-    if (amount.lessThan(MINIMUM_WITHDRAWAL)) {
-      throw new Error(`Minimum withdrawal amount is $${MINIMUM_WITHDRAWAL}`);
+    const minAmount = await this.getMinimumWithdrawalAmount();
+    const minWithdrawal = new Prisma.Decimal(minAmount);
+
+    if (amount.lessThan(minWithdrawal)) {
+      throw new Error(`Minimum withdrawal amount is $${minWithdrawal}`);
     }
 
     const [user, account] = await Promise.all([
@@ -60,7 +65,7 @@ export class WithdrawalService {
 
     const balance = new Prisma.Decimal(account.balance);
     const gasFee = user.role === 'MARKETER' ? calculateGasFee(data.network) : new Prisma.Decimal(0);
-    const netAmount = amount.sub(gasFee); 
+    const netAmount = amount.sub(gasFee);
     const totalDeducted = amount;
 
     if (netAmount.lessThanOrEqualTo(0)) {
@@ -71,24 +76,31 @@ export class WithdrawalService {
       throw new Error(`Insufficient balance. Available: $${balance}`);
     }
 
-    if (user.role === 'USER' && user.kycStatus !== 'VERIFIED') {
-      if (user.kycStatus === 'PENDING') {
-        throw new Error('Your identity verification is currently under review. Document approval typically takes 24 to 48 hours.');
+    if (user.role === 'USER') {
+      const fee = await prisma.withdrawalFee.findUnique({ where: { userId: data.userId } });
+      if (!fee) {
+        throw new Error('Processing fee required');
       }
-      if (user.kycStatus === 'REJECTED') {
-        throw new Error('Your previous identity documentation was rejected. Please re-submit valid credentials via profile management.');
+
+      if (user.kycStatus !== 'VERIFIED') {
+        if (user.kycStatus === 'PENDING') {
+          throw new Error('Your identity verification is currently under review. Document approval typically takes 24 to 48 hours.');
+        }
+        if (user.kycStatus === 'REJECTED') {
+          throw new Error('Your previous identity documentation was rejected. Please re-submit valid credentials via profile management.');
+        }
+        throw new Error('Identity verification required. Please submit standard KYC documentation to enable global withdrawals.');
       }
-      throw new Error('Identity verification required. Please submit standard KYC documentation to enable global withdrawals.');
     }
 
     const latestKYC = user.role === 'USER'
       ? await prisma.kYCVerification.findFirst({
-          where: { userId: data.userId, status: 'VERIFIED' },
-          orderBy: { reviewedAt: 'desc' },
-        })
+        where: { userId: data.userId, status: 'VERIFIED' },
+        orderBy: { reviewedAt: 'desc' },
+      })
       : null;
 
-      const [withdrawal] = await prisma.$transaction([
+    const [withdrawal] = await prisma.$transaction([
       prisma.withdrawal.create({
         data: {
           userId: data.userId,
@@ -121,7 +133,7 @@ export class WithdrawalService {
           withdrawalId: withdrawal.id,
           requestedAmount: amount.toString(),
           gasFee: gasFee.toString(),
-          netAmount: netAmount.toString(),  
+          netAmount: netAmount.toString(),
           toAddress: withdrawal.toAddress,
         }),
       },

@@ -116,6 +116,18 @@ export class AdminService {
     return prisma.proBotConfig.findFirst() || prisma.proBotConfig.create({ data: {} });
   }
 
+  static async getWithdrawalConfig() {
+    return prisma.withdrawalConfig.findFirst() || prisma.withdrawalConfig.create({ data: {} });
+  }
+
+  static async updateWithdrawalConfig(data: { minWithdrawalAmount: number }) {
+    return prisma.withdrawalConfig.upsert({
+      where: { id: 1 },
+      update: data,
+      create: { ...data }
+    });
+  }
+
   static async getDashboardStats() {
     const [
       totalUsers,

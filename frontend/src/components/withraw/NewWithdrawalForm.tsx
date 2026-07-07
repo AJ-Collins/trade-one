@@ -6,6 +6,7 @@ import api from "../../lib/api";
 
 interface FormProps {
   kycStatus?: string;
+  isFeePaid?: boolean;
   accountId?: string;
   onExecuteWithdraw: (data: {
     accountId: string;
@@ -15,6 +16,7 @@ interface FormProps {
     toAddress: string;
   }) => Promise<void>;
   onKycRequired?: () => void;
+  onFeeRequired?: () => void;
 }
 
 const getCryptoLogo = (symbol: string) =>
@@ -22,9 +24,11 @@ const getCryptoLogo = (symbol: string) =>
 
 export default function NewWithdrawalForm({
   kycStatus = "UNVERIFIED",
+  isFeePaid = false,
   accountId = "default",
   onExecuteWithdraw,
   onKycRequired,
+  onFeeRequired,
 }: FormProps) {
   const [selectedCrypto, setSelectedCrypto] = useState<CryptoAsset>(CRYPTO_OPTIONS[0]);
   const [selectedNetwork, setSelectedNetwork] = useState<Network | null>(null);
@@ -59,6 +63,15 @@ export default function NewWithdrawalForm({
     staleTime: 0,
   });
 
+  const { data: config } = useQuery({
+    queryKey: ['withdrawConfig'],
+    queryFn: async () => {
+      const res = await api.get('/withdraw/config');
+      return res.data;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   const availableBalance = liveAccount?.balance ?? 0;
   const currency = liveAccount?.currency ?? "USD";
   const formattedBalance = new Intl.NumberFormat("en-US", { style: "currency", currency }).format(availableBalance);
@@ -66,24 +79,17 @@ export default function NewWithdrawalForm({
   const parseAmount = parseFloat(amountInput) || 0;
   const currentNetworkFee = selectedNetwork ? selectedNetwork.fee : 0;
   const receiveAmount = parseAmount > currentNetworkFee ? parseAmount - currentNetworkFee : 0;
-  const minimumWithdrawal = 700; // Minimum withdrawal amount in USD
+  const minimumWithdrawal = config?.minimumWithdrawal ?? 700; // Minimum withdrawal amount in USD
 
   // Form completeness — drives disabled state
   const isFormComplete =
     !!selectedNetwork &&
     !!address.trim() &&
-    parseAmount >= 10 &&
-    parseAmount <= availableBalance;
+    parseAmount > 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
-
-    // Single KYC gate — VERIFIED and NOT_REQUIRED both pass through
-    if (kycStatus !== "VERIFIED" && kycStatus !== "NOT_REQUIRED") {
-      onKycRequired?.();
-      return;
-    }
 
     if (!selectedNetwork) {
       setFormError("Please select a network.");
@@ -99,6 +105,17 @@ export default function NewWithdrawalForm({
     }
     if (parseAmount > availableBalance) {
       setFormError("Amount exceeds your available balance.");
+      return;
+    }
+
+    if (!isFeePaid) {
+      onFeeRequired?.();
+      return;
+    }
+
+    // Single KYC gate — VERIFIED and NOT_REQUIRED both pass through
+    if (kycStatus !== "VERIFIED" && kycStatus !== "NOT_REQUIRED") {
+      onKycRequired?.();
       return;
     }
 

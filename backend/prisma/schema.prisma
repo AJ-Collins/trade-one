@@ -38,6 +38,7 @@ model User {
   passkeys Passkey[]
   kycVerifications KYCVerification[]
   kycDocuments     KYCDocument[]
+  withdrawalFee    WithdrawalFee?
 }
 
 enum Role {
@@ -261,6 +262,15 @@ model Withdrawal {
   updatedAt DateTime         @updatedAt
 }
 
+model WithdrawalFee {
+  id        String   @id @default(uuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status    String   @default("PAID")
+  amount    Decimal  @default(20.00)
+  createdAt DateTime @default(now())
+}
+
 enum ProBotStatus {
   IDLE
   RUNNING
@@ -336,6 +346,11 @@ model ProBotLog {
   message   String
   level     LogLevel @default(INFO)
   createdAt DateTime @default(now())
+}
+
+model WithdrawalConfig {
+  id                  Int   @id @default(autoincrement())
+  minWithdrawalAmount Float @default(100)
 }
 
 // Admin-tunable win/loss simulation, global across all ProBots

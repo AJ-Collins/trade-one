@@ -49,6 +49,24 @@ export class AdminController {
     res.json(config);
   }
 
+  static async getWithdrawalConfig(req: Request, res: Response) {
+    try {
+      const config = await AdminService.getWithdrawalConfig();
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+
+  static async updateWithdrawalConfig(req: Request, res: Response) {
+    try {
+      const config = await AdminService.updateWithdrawalConfig(req.body);
+      res.json(config);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  }
+
   static async getDashboardStats(req: Request, res: Response) {
     try {
       const stats = await AdminService.getDashboardStats();

@@ -12,6 +12,8 @@ router.post("/passkeys", AdminController.generatePasskey);
 router.get("/passkeys", AdminController.listPasskeys);
 router.get("/bot/config", AdminController.getConfig);
 router.put("/bot/config", AdminController.updateConfig);
+router.get("/withdrawal/config", AdminController.getWithdrawalConfig);
+router.put("/withdrawal/config", AdminController.updateWithdrawalConfig);
 router.delete("/passkeys/:id", AdminController.deletePasskey);
 
 router.get("/stats", AdminController.getDashboardStats);
@@ -48,8 +50,8 @@ router.post("/deposits/credit", depositCreditLimiter, AdminController.manualCred
 router.get("/system/settings",        AdminController.getSystemSettings);
 router.post("/system/settings/reveal", AdminController.revealSystemSetting);
 router.put("/system/settings",         AdminController.updateSystemSettings);
-router.post("/profile/2fa/setup",  AdminController.setup2FA);
-router.post("/profile/2fa/enable", AdminController.enable2FA);
+// router.post("/profile/2fa/setup",  AdminController.setup2FA);
+// router.post("/profile/2fa/enable", AdminController.enable2FA);
 
 // Admin withdrawal amount update route
 router.post("/marketers/:id/payout", AdminController.setMarketerPayout);

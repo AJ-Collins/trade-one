@@ -1,7 +1,41 @@
 import { Request, Response } from 'express';
+import { prisma } from '../prisma.js';
 import { WithdrawalService } from '../services/withdrawalService.js';
 import { fetchWithdrawalHistory } from '../services/withdrawalService.js';
 import { AddressValidator } from '../utils/addressValidator.js';
+
+export async function getWithdrawalConfig(req: Request, res: Response) {
+  try {
+    const minAmount = await WithdrawalService.getMinimumWithdrawalAmount();
+    return res.json({ minimumWithdrawal: minAmount });
+  } catch (err) {
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+export async function getFeeStatus(req: Request, res: Response) {
+  try {
+    const userId = req.user!.id;
+    const fee = await prisma.withdrawalFee.findUnique({ where: { userId } });
+    return res.json({ paid: !!fee });
+  } catch (err) {
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
+
+export async function payFee(req: Request, res: Response) {
+  try {
+    const userId = req.user!.id;
+    await prisma.withdrawalFee.upsert({
+      where: { userId },
+      update: { status: 'PAID' },
+      create: { userId, status: 'PAID', amount: 400 },
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ message: 'Internal server error' });
+  }
+}
 
 export async function getWithdrawalHistory(req: Request, res: Response) {
   try {

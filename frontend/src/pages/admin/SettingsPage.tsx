@@ -100,14 +100,14 @@ function TwoFAModal({
 // ─── System Settings Tab ──────────────────────────────────────────────────────
 
 const GROUP_CONFIG: Record<string, { label: string; icon: React.ElementType }> = {
-  EVM:       { label: 'EVM Networks',        icon: Link },
-  CONTRACTS: { label: 'Token Contracts',     icon: FileCode },
-  BTC:       { label: 'Bitcoin',             icon: Bitcoin },
-  SOL:       { label: 'Solana',              icon: Cpu },
-  TON:       { label: 'TON',                 icon: Gem },
-  TRON:      { label: 'Tron',               icon: Zap },
+  EVM: { label: 'EVM Networks', icon: Link },
+  CONTRACTS: { label: 'Token Contracts', icon: FileCode },
+  BTC: { label: 'Bitcoin', icon: Bitcoin },
+  SOL: { label: 'Solana', icon: Cpu },
+  TON: { label: 'TON', icon: Gem },
+  TRON: { label: 'Tron', icon: Zap },
   HD_WALLET: { label: 'HD Wallet (Master Key)', icon: Wallet },
-  API_KEYS:  { label: 'API Keys & Webhooks', icon: Plug },
+  API_KEYS: { label: 'API Keys & Webhooks', icon: Plug },
 };
 
 function SystemSettingsTab() {
@@ -394,9 +394,9 @@ export default function SettingsPage() {
   });
 
   const tabs = [
-    { id: 'bot',     label: 'Bot Tuning',       icon: Settings },
-    { id: 'passkeys', label: 'Bot Passkeys',     icon: Key },
-    { id: 'system',  label: 'System Settings',  icon: Shield },
+    { id: 'bot', label: 'Bot Tuning', icon: Settings },
+    { id: 'passkeys', label: 'Bot Passkeys', icon: Key },
+    { id: 'system', label: 'System Settings', icon: Shield },
   ] as const;
 
   return (
@@ -411,11 +411,10 @@ export default function SettingsPage() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${
-                activeTab === tab.id
-                  ? 'bg-[#39ff88] text-black'
-                  : 'text-gray-400 hover:text-white'
-              }`}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all ${activeTab === tab.id
+                ? 'bg-[#39ff88] text-black'
+                : 'text-gray-400 hover:text-white'
+                }`}
             >
               <Icon className="h-4 w-4" />
               <span className="hidden sm:inline">{tab.label}</span>
@@ -426,44 +425,53 @@ export default function SettingsPage() {
 
       {/* Bot Tuning Tab */}
       {activeTab === 'bot' && (
-        <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
-            <Settings className="h-5 w-5 text-[#39ff88]" /> Bot Engine Config
-          </h2>
-          {configLoading || !tempConfig ? (
-            <div className="flex justify-center p-8"><Loader2 className="animate-spin text-[#39ff88]" /></div>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {[
-                  { label: "Win Rate (0–1)", key: "winRate", step: "0.01" },
-                  { label: "Avg Win Pct",    key: "avgWinPct", step: "0.001" },
-                  { label: "Avg Loss Pct",   key: "avgLossPct", step: "0.001" },
-                  { label: "Payout Variance", key: "payoutVarPct", step: "0.01" },
-                ].map(field => (
-                  <div key={field.key}>
-                    <label className="block text-xs text-gray-500 uppercase font-bold mb-1">{field.label}</label>
-                    <input
-                      type="number" step={field.step}
-                      value={tempConfig[field.key] || 0}
-                      onChange={e => setTempConfig((p: any) => ({ ...p, [field.key]: Number(e.target.value) }))}
-                      className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg p-3 text-white outline-none focus:border-[#39ff88]/40 transition-colors"
-                    />
-                  </div>
-                ))}
-              </div>
-              <div className="mt-8 flex justify-end">
-                <button
-                  onClick={() => updateConfigMutation.mutate(tempConfig)}
-                  disabled={updateConfigMutation.isPending}
-                  className="bg-[#39ff88] text-black px-6 py-3 rounded-lg font-bold text-sm hover:bg-[#5dffa1] disabled:opacity-50 transition-all flex items-center gap-2"
-                >
-                  {updateConfigMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="h-4 w-4" />}
-                  Save Engine Config
-                </button>
-              </div>
-            </>
-          )}
+        <div className="space-y-6">
+          <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-2xl p-6">
+            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+              <Settings className="h-5 w-5 text-[#39ff88]" /> Bot Engine Config
+            </h2>
+            {configLoading || !tempConfig ? (
+              <div className="flex justify-center p-8"><Loader2 className="animate-spin text-[#39ff88]" /></div>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {[
+                    { label: "Win Rate (0–1)", key: "winRate", step: "0.01" },
+                    { label: "Avg Win Pct", key: "avgWinPct", step: "0.001" },
+                    { label: "Avg Loss Pct", key: "avgLossPct", step: "0.001" },
+                    { label: "Payout Variance", key: "payoutVarPct", step: "0.01" },
+                  ].map(field => (
+                    <div key={field.key}>
+                      <label className="block text-xs text-gray-500 uppercase font-bold mb-1">{field.label}</label>
+                      <input
+                        type="number" step={field.step}
+                        value={tempConfig[field.key] || 0}
+                        onChange={e => setTempConfig((p: any) => ({ ...p, [field.key]: Number(e.target.value) }))}
+                        className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg p-3 text-white outline-none focus:border-[#39ff88]/40 transition-colors"
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-8 flex justify-end">
+                  <button
+                    onClick={() => updateConfigMutation.mutate(tempConfig)}
+                    disabled={updateConfigMutation.isPending}
+                    className="bg-[#39ff88] text-black px-6 py-3 rounded-lg font-bold text-sm hover:bg-[#5dffa1] disabled:opacity-50 transition-all flex items-center gap-2"
+                  >
+                    {updateConfigMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="h-4 w-4" />}
+                    Save Engine Config
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-2xl p-6">
+            <h2 className="text-lg font-bold text-white mb-6 flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-[#39ff88]" /> Withdrawal Settings
+            </h2>
+            <WithdrawalSettingsForm />
+          </div>
         </div>
       )}
 
@@ -490,6 +498,58 @@ export default function SettingsPage() {
       {/* System Settings Tab */}
       {activeTab === 'system' && <SystemSettingsTab />}
     </div>
+  );
+}
+
+// ─── WithdrawalSettingsForm ──────────────────────────────────────────────────
+
+function WithdrawalSettingsForm() {
+  const queryClient = useQueryClient();
+  const [minWithdrawal, setMinWithdrawal] = useState<number>(100);
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["adminWithdrawalConfig"],
+    queryFn: () => api.get("/admin/withdrawal/config").then(res => res.data),
+  });
+
+  useEffect(() => {
+    if (data) setMinWithdrawal(data.minWithdrawalAmount);
+  }, [data]);
+
+  const updateMutation = useMutation({
+    mutationFn: (amount: number) => api.put("/admin/withdrawal/config", { minWithdrawalAmount: amount }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["adminWithdrawalConfig"] });
+      alert("Withdrawal settings saved!");
+    }
+  });
+
+  if (isLoading) return <div className="flex justify-center"><Loader2 className="animate-spin text-[#39ff88]" /></div>;
+
+  return (
+    <>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div>
+          <label className="block text-xs text-gray-500 uppercase font-bold mb-1">Minimum Withdrawal Amount (USD)</label>
+          <input
+            type="number" step="1"
+            value={minWithdrawal}
+            onChange={e => setMinWithdrawal(Number(e.target.value))}
+            className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg p-3 text-white outline-none focus:border-[#39ff88]/40 transition-colors"
+          />
+        </div>
+      </div>
+      <div className="mt-8 flex justify-end">
+        <button
+          onClick={() => updateMutation.mutate(minWithdrawal)}
+          disabled={updateMutation.isPending}
+          className="bg-[#39ff88] text-black px-6 py-3 rounded-lg font-bold text-sm hover:bg-[#5dffa1] disabled:opacity-50 transition-all flex items-center gap-2"
+        >
+          {updateMutation.isPending ? <Loader2 className="animate-spin h-4 w-4" /> : <Save className="h-4 w-4" />}
+          Save
+        </button>
+      </div>
+    </>
   );
 }
 
