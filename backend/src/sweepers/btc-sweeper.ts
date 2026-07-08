@@ -11,10 +11,58 @@ import { getConfig } from '../utils/configLoader.js';
 const bip32 = BIP32Factory(ecc);
 const ECPair = ECPairFactory(ecc);
 
-const NETWORK_CONFIG: Record<string, { btcNetwork: bitcoin.Network; api: string }> = {
-  btc_mainnet: { btcNetwork: bitcoin.networks.bitcoin, api: 'https://mempool.space/api' },
-  btc_testnet: { btcNetwork: bitcoin.networks.testnet, api: 'https://mempool.space/testnet/api' },
+const NETWORK_CONFIG: Record<string, { btcNetwork: bitcoin.Network }> = {
+  btc_mainnet: { btcNetwork: bitcoin.networks.bitcoin },
+  btc_testnet: { btcNetwork: bitcoin.networks.testnet },
 };
+
+// Same robust multi-provider fallback logic as the listener to avoid IP bans
+const BTC_APIS: Record<string, string[]> = {
+  btc_mainnet: [
+    'https://blockstream.info/api',
+    'https://mempool.space/api',
+    'https://mempool.emzy.de/api', // Public mirror
+  ],
+  btc_testnet: ['https://mempool.space/testnet/api'],
+};
+
+const activeApiIndex: Record<string, number> = {
+  btc_mainnet: 0,
+  btc_testnet: 0,
+};
+
+async function btcApiRequestWithBase<T>(network: string, requestFn: (base: string) => Promise<T>): Promise<T> {
+  const apis = BTC_APIS[network];
+  if (!apis) throw new Error(`No APIs defined for ${network}`);
+
+  let currentApi = activeApiIndex[network] ?? 0;
+
+  for (let attempt = 0; attempt < apis.length; attempt++) {
+    const base = apis[currentApi];
+
+    // Try the current API up to 2 times
+    for (let retry = 0; retry < 2; retry++) {
+      try {
+        return await requestFn(base);
+      } catch (err: any) {
+        const status = err.response?.status;
+        if (status === 429 || (status >= 500 && status < 600) || !status) {
+          const delay = 2000 * (retry + 1);
+          console.warn(`[BTC Sweeper] Rate limited/transient error for ${base}. Retrying in ${delay}ms...`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw err; // Non-retryable error (e.g., 400 Bad Request)
+      }
+    }
+
+    console.warn(`[BTC Sweeper] API ${base} exhausted retries. Rotating to fallback provider.`);
+    currentApi = (currentApi + 1) % apis.length;
+    activeApiIndex[network] = currentApi;
+  }
+
+  throw new Error(`All BTC API providers failed for ${network}`);
+}
 
 // Below this in satoshis after fees, the output is uneconomical to sweep
 const DUST_LIMIT_SATS = 546n;
@@ -35,32 +83,28 @@ function deriveKeyPair(derivationPath: string, btcNetwork: bitcoin.Network, mnem
   return ECPair.fromWIF(child.toWIF(), btcNetwork);
 }
 
-async function getFeeRateSatVbyte(api: string): Promise<number> {
+async function getFeeRateSatVbyte(network: string): Promise<number> {
   try {
-    const { data } = await axios.get(`${api}/v1/fees/recommended`, { timeout: 8_000 });
-    // fastestFee: confirmed in next block. Use halfHourFee if you want slightly cheaper.
-    return Math.max(data.fastestFee ?? 10, 2); // floor at 2 sat/vbyte
+    const data = await btcApiRequestWithBase(network, base =>
+      axios.get(`${base}/v1/fees/recommended`, { timeout: 8_000 }).then(r => r.data)
+    );
+    return Math.max(data.fastestFee ?? 10, 2);
   } catch {
-    return 10; // safe fallback
+    return 10;
   }
 }
 
-async function getUTXOs(address: string, api: string): Promise<UTXO[]> {
-  const { data } = await axios.get(`${api}/address/${address}/utxo`, { timeout: 10_000 });
-  return (data as any[]).map(u => ({
-    txid: u.txid,
-    vout: u.vout,
-    value: BigInt(u.value),
-    confirmed: !!u.status?.confirmed,
-  }));
+async function getUTXOs(address: string, network: string): Promise<UTXO[]> {
+  const data = await btcApiRequestWithBase(network, base =>
+    axios.get(`${base}/address/${address}/utxo`, { timeout: 10_000 }).then(r => r.data)
+  );
+  return (data as any[]).map(u => ({ txid: u.txid, vout: u.vout, value: BigInt(u.value), confirmed: !!u.status?.confirmed }));
 }
 
-async function broadcastTx(txHex: string, api: string): Promise<string> {
-  const { data } = await axios.post(`${api}/tx`, txHex, {
-    headers: { 'Content-Type': 'text/plain' },
-    timeout: 15_000,
-  });
-  return data as string; // returns txid
+async function broadcastTx(txHex: string, network: string): Promise<string> {
+  return btcApiRequestWithBase(network, base =>
+    axios.post(`${base}/tx`, txHex, { headers: { 'Content-Type': 'text/plain' }, timeout: 15_000 }).then(r => r.data)
+  );
 }
 
 // Estimate vbytes for a P2WPKH-to-P2WPKH transaction:
@@ -78,7 +122,7 @@ async function sweepBTC(network: string) {
     return;
   }
 
-  const { btcNetwork, api } = NETWORK_CONFIG[network];
+  const { btcNetwork } = NETWORK_CONFIG[network];
 
   const pending = await prisma.deposit.findMany({
     where: { network, coin: 'BTC', status: 'CREDITED', sweptTx: null },
@@ -88,12 +132,12 @@ async function sweepBTC(network: string) {
   if (pending.length === 0) return;
   console.log(`[btc-sweeper/${network}] ${pending.length} deposit(s) to sweep`);
 
-  const feeRate = await getFeeRateSatVbyte(api);
+  const feeRate = await getFeeRateSatVbyte(network);
 
   for (const deposit of pending) {
     try {
       const { address, derivationPath } = deposit.depositAddress;
-      const allUTXOs = await getUTXOs(address, api);
+      const allUTXOs = await getUTXOs(address, network);
       const utxos = allUTXOs.filter(u => u.confirmed);
 
       if (utxos.length === 0) {
@@ -144,7 +188,7 @@ async function sweepBTC(network: string) {
       // Sign all inputs with the same key (all UTXOs belong to this one address)
       for (let i = 0; i < utxos.length; i++) {
         psbt.signInput(i, keyPair);
-        
+
         const isValid = psbt.validateSignaturesOfInput(i, (pubkey, msghash, signature) => {
           return keyPair.verify(msghash, signature);
         });
@@ -156,14 +200,17 @@ async function sweepBTC(network: string) {
 
       psbt.finalizeAllInputs();
       const txHex = psbt.extractTransaction().toHex();
-      const txid = await broadcastTx(txHex, api);
+      const txid = await broadcastTx(txHex, network);
 
       await markDepositSwept(deposit.id, txid);
       console.log(
         `  ✅ BTC swept: ${sendSats} sat (${(Number(sendSats) / 1e8).toFixed(8)} BTC) → ${HOT_WALLET_BTC} | txid: ${txid}`,
       );
     } catch (err: any) {
-      console.error(`  ✗ BTC sweep failed for deposit ${deposit.id}:`, err.message);
+      const detail = err?.response?.data
+        ? JSON.stringify(err.response.data)
+        : err?.message || err?.code || String(err);
+      console.error(`  ✗ BTC sweep failed for deposit ${deposit.id}:`, detail);
     }
   }
 }
