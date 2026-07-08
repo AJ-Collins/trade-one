@@ -60,7 +60,6 @@ services:
       start_period: 30s
 
   deposit-worker:
-    build: .
     image: aiscalping-backend
     container_name: aiscalping_deposit_worker
     restart: always
@@ -80,7 +79,6 @@ services:
     command: node dist/workers/index.js
 
   sweeper-worker:
-    build: .
     image: aiscalping-backend
     container_name: aiscalping_sweeper
     restart: always
@@ -100,7 +98,6 @@ services:
     command: node dist/workers/sweeperIndex.js
 
   listener-worker:
-    build: .
     image: aiscalping-backend
     container_name: aiscalping_listener
     restart: always
@@ -120,7 +117,6 @@ services:
     command: node dist/workers/listenerIndex.js
 
   probot-worker:
-    build: .
     image: aiscalping-backend
     restart: always
     deploy:
@@ -139,7 +135,6 @@ services:
     command: node dist/workers/proBotWorker.js
 
   email-worker:
-    build: .
     image: aiscalping-backend
     container_name: aiscalping_email_worker
     restart: always
