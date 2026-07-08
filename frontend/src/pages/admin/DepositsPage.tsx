@@ -61,10 +61,10 @@ export default function AdminDepositsPage() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [retryingId, setRetryingId] = useState<string | null>(null);
-  const [manualModal, setManualModal] = useState(false);
-  const [manualForm, setManualForm] = useState({ txHash: '', usdValue: '' });
-  const [manualResult, setManualResult] = useState<any>(null);
-  const [manualError, setManualError] = useState<string | null>(null);
+  const [backfillModal, setBackfillModal] = useState(false);
+  const [backfillForm, setBackfillForm] = useState({ network: 'eth_mainnet', txHashes: '' });
+  const [backfillResults, setBackfillResults] = useState<any[] | null>(null);
+  const [backfillError, setBackfillError] = useState<string | null>(null);
 
   const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearch(e.target.value);
@@ -116,29 +116,34 @@ export default function AdminDepositsPage() {
   const totalItems = data?.total ?? 0;
   const totalPages = data?.totalPages ?? 1;
 
-  const manualCreditMutation = useMutation({
-    mutationFn: (data: { txHash: string; usdValue: string }) =>
-      api.post('/admin/deposits/credit', {
-        txHash: data.txHash.trim(),
-        usdValue: parseFloat(data.usdValue),
-      }),
+  const backfillMutation = useMutation({
+    mutationFn: (data: { network: string; txHashes: string }) => {
+      const hashes = data.txHashes
+        .split(/[,\s\n]+/)
+        .map(h => h.trim())
+        .filter(h => h.length > 0);
+      return api.post('/admin/deposits/backfill', {
+        network: data.network,
+        txHashes: hashes,
+      });
+    },
     onSuccess: (res) => {
-      setManualResult(res.data);
-      setManualError(null);
+      setBackfillResults(res.data.results);
+      setBackfillError(null);
       queryClient.invalidateQueries({ queryKey: ["admin-deposits"] });
       queryClient.invalidateQueries({ queryKey: ["admin-deposit-stats"] });
     },
     onError: (e: any) => {
-      setManualError(e?.response?.data?.error || 'Manual credit failed');
-      setManualResult(null);
+      setBackfillError(e?.response?.data?.error || 'Backfill failed');
+      setBackfillResults(null);
     },
   });
 
   const resetModal = () => {
-    setManualModal(false);
-    setManualForm({ txHash: '', usdValue: '' });
-    setManualResult(null);
-    setManualError(null);
+    setBackfillModal(false);
+    setBackfillForm({ network: 'eth_mainnet', txHashes: '' });
+    setBackfillResults(null);
+    setBackfillError(null);
   };
 
   return (
@@ -189,11 +194,11 @@ export default function AdminDepositsPage() {
           />
         </div>
         <button
-          onClick={() => setManualModal(true)}
+          onClick={() => setBackfillModal(true)}
           className="flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 font-bold text-xs px-3 py-2 rounded-lg transition whitespace-nowrap"
         >
           <PlusCircle className="h-4 w-4" />
-          Credit
+          Backfill
         </button>
       </div>
 
@@ -321,95 +326,104 @@ export default function AdminDepositsPage() {
           </div>
         </div>
       </div>
-      {manualModal && (
+      {backfillModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="bg-[#0d0f17] border border-[#1a1f28] w-full max-w-sm rounded-xl p-6 shadow-2xl space-y-4">
+          <div className="bg-[#0d0f17] border border-[#1a1f28] w-full max-w-lg rounded-xl p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
             <div>
-              <h3 className="text-lg font-bold text-white">Manual Deposit Credit</h3>
+              <h3 className="text-lg font-bold text-white">Deposit Backfill</h3>
               <p className="text-xs text-gray-400 mt-1">
-                Enter the tx hash and USD value. The system will look up the address, coin and user automatically.
+                Enter transaction hashes (one per line, max 20) to parse and credit any missed deposits.
               </p>
             </div>
 
-            {/* Success result */}
-            {manualResult && !manualResult.alreadyCredited && (
-              <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-lg p-3 space-y-1">
-                <p className="text-xs text-emerald-400 font-bold">{manualResult.message}</p>
-                <div className="text-[11px] text-gray-400 space-y-0.5 font-mono">
-                  <p>User: <span className="text-white">{manualResult.details?.userId}</span></p>
-                  <p>Coin: <span className="text-white">{manualResult.details?.coin}</span></p>
-                  <p>Network: <span className="text-white">{manualResult.details?.network}</span></p>
-                  <p>Amount: <span className="text-white">{manualResult.details?.amountCrypto} {manualResult.details?.coin}</span></p>
-                </div>
-              </div>
-            )}
-
-            {manualResult?.alreadyCredited && (
-              <div className="bg-amber-500/10 border border-amber-500/20 rounded-lg px-3 py-2 text-xs text-amber-400">
-                ⚠ {manualResult.message}
-              </div>
-            )}
-
-            {manualError && (
+            {backfillError && (
               <div className="bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2 text-xs text-red-400">
-                {manualError}
+                {backfillError}
               </div>
             )}
 
-            {!manualResult && (
+            {backfillResults && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-bold text-white">Results</h4>
+                {backfillResults.map((r, i) => (
+                  <div key={i} className={`border rounded-lg p-3 space-y-1 ${
+                    r.status === 'credited' ? 'bg-emerald-500/10 border-emerald-500/20' :
+                    r.status === 'already_credited' ? 'bg-amber-500/10 border-amber-500/20' :
+                    r.status === 'no_match' ? 'bg-blue-500/10 border-blue-500/20' :
+                    'bg-red-500/10 border-red-500/20'
+                  }`}>
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-mono text-white truncate max-w-[200px]">{r.txHash}</span>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
+                        r.status === 'credited' ? 'text-emerald-400 bg-emerald-500/20' :
+                        r.status === 'already_credited' ? 'text-amber-400 bg-amber-500/20' :
+                        r.status === 'no_match' ? 'text-blue-400 bg-blue-500/20' :
+                        'text-red-400 bg-red-500/20'
+                      }`}>
+                        {r.status.replace('_', ' ')}
+                      </span>
+                    </div>
+                    {r.error && <p className="text-[10px] text-red-400 mt-1">{r.error}</p>}
+                    {r.credits?.map((c: any, j: number) => (
+                      <div key={j} className="text-[11px] text-gray-300 mt-2 font-mono bg-black/20 p-2 rounded">
+                        <span className="text-[#39ff88]">+${c.usdValue.toFixed(2)}</span> ({c.amount} {c.symbol}) → {c.userId}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!backfillResults && (
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
-                    Transaction Hash
+                    Network
                   </label>
-                  <input
-                    type="text"
-                    placeholder="0xb5f206db4aee..."
-                    value={manualForm.txHash}
-                    onChange={e => setManualForm(f => ({ ...f, txHash: e.target.value }))}
-                    className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg px-3 py-2 text-xs text-white font-mono outline-none focus:border-[#39ff88]/40"
-                  />
-                  <p className="text-[10px] text-gray-600 mt-1">Copy from Etherscan / BSCscan</p>
+                  <select
+                    value={backfillForm.network}
+                    onChange={e => setBackfillForm(f => ({ ...f, network: e.target.value }))}
+                    className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-[#39ff88]/40"
+                  >
+                    <option value="eth_mainnet">Ethereum Mainnet</option>
+                    <option value="bsc_mainnet">BSC Mainnet</option>
+                    <option value="polygon_mainnet">Polygon Mainnet</option>
+                    <option value="arbitrum_mainnet">Arbitrum Mainnet</option>
+                  </select>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-gray-500 uppercase mb-1.5">
-                    USD Value to Credit
+                    Transaction Hashes (one per line)
                   </label>
-                  <div className="relative">
-                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">$</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      placeholder="175.00"
-                      value={manualForm.usdValue}
-                      onChange={e => setManualForm(f => ({ ...f, usdValue: e.target.value }))}
-                      className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg pl-6 pr-3 py-2 text-xs text-white outline-none focus:border-[#39ff88]/40"
-                    />
-                  </div>
-                  <p className="text-[10px] text-gray-600 mt-1">USD equivalent at time of deposit</p>
+                  <textarea
+                    rows={5}
+                    placeholder="0xb5f206db4aee...&#10;0xfa49208ad9b8..."
+                    value={backfillForm.txHashes}
+                    onChange={e => setBackfillForm(f => ({ ...f, txHashes: e.target.value }))}
+                    className="w-full bg-[#05070a] border border-[#1a1f28] rounded-lg px-3 py-2 text-xs text-white font-mono outline-none focus:border-[#39ff88]/40 resize-y"
+                  />
+                  <p className="text-[10px] text-gray-600 mt-1">Supports up to 20 transactions per request.</p>
                 </div>
               </div>
             )}
 
             <div className="flex justify-end gap-3 pt-1">
-              <button onClick={resetModal} className="px-4 py-2 text-sm text-gray-400 hover:text-white">
-                {manualResult ? 'Close' : 'Cancel'}
+              <button onClick={resetModal} className="px-4 py-2 text-sm text-gray-400 hover:text-white transition">
+                {backfillResults ? 'Close' : 'Cancel'}
               </button>
-              {!manualResult && (
+              {!backfillResults && (
                 <button
-                  onClick={() => manualCreditMutation.mutate(manualForm)}
+                  onClick={() => backfillMutation.mutate(backfillForm)}
                   disabled={
-                    manualCreditMutation.isPending ||
-                    !manualForm.txHash.trim() ||
-                    !manualForm.usdValue ||
-                    Number(manualForm.usdValue) <= 0
+                    backfillMutation.isPending ||
+                    !backfillForm.network ||
+                    !backfillForm.txHashes.trim()
                   }
-                  className="bg-amber-500 text-[#05070a] font-bold text-sm px-4 py-2 rounded-lg hover:bg-amber-400 flex items-center gap-2 disabled:opacity-50"
+                  className="bg-amber-500 text-[#05070a] font-bold text-sm px-4 py-2 rounded-lg hover:bg-amber-400 flex items-center gap-2 disabled:opacity-50 transition"
                 >
-                  {manualCreditMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                  {manualCreditMutation.isPending ? 'Looking up tx...' : 'Credit Deposit'}
+                  {backfillMutation.isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  {backfillMutation.isPending ? 'Processing...' : 'Run Backfill'}
                 </button>
               )}
             </div>

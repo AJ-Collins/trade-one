@@ -45,6 +45,7 @@ router.patch("/profile", AdminController.updateProfile);
 router.patch("/profile/password", AdminController.updatePassword);
 
 router.post("/deposits/credit", depositCreditLimiter, AdminController.manualCreditDeposit);
+router.post("/deposits/backfill", depositCreditLimiter, AdminController.backfillDeposits);
 
 // System configs settings routes
 router.get("/system/settings",        AdminController.getSystemSettings);
