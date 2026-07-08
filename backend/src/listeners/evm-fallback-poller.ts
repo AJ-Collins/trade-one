@@ -108,22 +108,21 @@ const CONFIRMATION_LAG: Partial<Record<SupportedNetwork, number>> = {
   arbitrum_mainnet: 1,
 };
 
-// How many blocks per getLogs batch. With getLogsAdaptive each batch costs
-// ~1 RPC call per contract regardless of width (automatic binary-split on
-// "response too large"), so wider ranges are safe and dramatically improve
-// throughput on fast chains like Arbitrum (~4 blocks/sec).
+// How many blocks per getLogs batch. Alchemy recently restricted their Free Tier
+// so that ALL eth_getLogs requests are hard-capped to a maximum 10-block range
+// across all networks, regardless of the query complexity.
 const BATCH_SIZE: Partial<Record<SupportedNetwork, number>> = {
-  eth_mainnet: 100,   // ~12 sec/block → 100 blocks ≈ 20 min
-  polygon_mainnet: 200,   //  ~2 sec/block → 200 blocks ≈  7 min
-  arbitrum_mainnet: 500,   // ~0.25s/block  → 500 blocks ≈  2 min
+  eth_mainnet: 10,
+  polygon_mainnet: 10,
+  arbitrum_mainnet: 10,
 };
 
-// Safety cap: don't let a single pollEVMOnce() call loop forever if the chain
-// is massively behind (e.g. after a long downtime). 20 batches × 500 blocks =
-// 10 000 Arbitrum blocks ≈ 42 min of chain time caught up in one cycle.
-// Since Arbitrum produces ~760 blocks during the 190s interval, the poller
-// gains ~9 240 blocks per cycle — any realistic lag cleared in one pass.
-const MAX_BATCHES_PER_CYCLE = 20;
+// To compensate for the tiny 10-block limit, we increase the number of batches
+// processed per cycle. 50 batches × 10 blocks = 500 blocks scanned per cycle.
+// - Arbitrum (15s interval) produces ~60 blocks per cycle. 500 > 60 (catches up rapidly).
+// - Polygon (45s interval) produces ~22 blocks per cycle. 500 > 22.
+// - ETH (60s interval) produces ~5 blocks per cycle. 500 > 5.
+const MAX_BATCHES_PER_CYCLE = 50;
 
 // Track "running" per network independently so one slow chain doesn't block another.
 const runningFlags: Record<string, boolean> = {};
