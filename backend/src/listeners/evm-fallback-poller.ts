@@ -12,8 +12,6 @@ import { Coin } from '@prisma/client';
 
 const TRANSFER_TOPIC = ethers.utils.id('Transfer(address,address,uint256)');
 
-const GETLOGS_CHUNK_SIZE = 10;
-
 // --- Retry-with-backoff for transient RPC errors ---------------------------
 // Alchemy occasionally returns 503 "Unable to complete request at this time"
 // for an otherwise-valid eth_getLogs call. Previously a single stuck chunk
@@ -64,24 +62,40 @@ async function getLogsWithRetry(
   throw lastErr;
 }
 
-async function getLogsChunked(
+// Detects Alchemy's "too many results" error specifically — distinct from
+// the transient 5xx/429 errors already handled by isRetryableRpcError.
+function isResponseTooLargeError(err: any): boolean {
+  const msg = (err?.message ?? err?.error?.message ?? '').toLowerCase();
+  return (
+    msg.includes('response size exceeded') ||
+    msg.includes('query returned more than') ||
+    (msg.includes('block range') && msg.includes('limit'))
+  );
+}
+
+// Adaptive getLogs: tries the full range in one call. On a genuine "too
+// many results" error, halves the range and recurses — so most batches cost
+// ONE RPC call instead of many sequential chunks, and we only pay the split
+// cost on the rare batch that's actually dense with matching transfers.
+async function getLogsAdaptive(
   provider: ethers.providers.JsonRpcProvider,
   params: { address: string; topics: (string | string[] | null)[] },
   fromBlock: number,
   toBlock: number,
 ): Promise<ethers.providers.Log[]> {
-  const allLogs: ethers.providers.Log[] = [];
-  for (let start = fromBlock; start <= toBlock; start += GETLOGS_CHUNK_SIZE) {
-    const end = Math.min(start + GETLOGS_CHUNK_SIZE - 1, toBlock);
-    const logs = await getLogsWithRetry(provider, {
-      fromBlock: start,
-      toBlock: end,
-      address: params.address,
-      topics: params.topics,
-    });
-    allLogs.push(...logs);
+  try {
+    return await getLogsWithRetry(provider, { ...params, fromBlock, toBlock });
+  } catch (err: any) {
+    if (isResponseTooLargeError(err) && toBlock > fromBlock) {
+      const mid = fromBlock + Math.floor((toBlock - fromBlock) / 2);
+      const [left, right] = await Promise.all([
+        getLogsAdaptive(provider, params, fromBlock, mid),
+        getLogsAdaptive(provider, params, mid + 1, toBlock),
+      ]);
+      return [...left, ...right];
+    }
+    throw err;
   }
-  return allLogs;
 }
 
 
@@ -147,7 +161,7 @@ async function pollOneBatch(
   const contracts = await getStablecoinContracts(network);
 
   for (const contractAddr of Object.keys(contracts)) {
-    const logs = await getLogsChunked(
+    const logs = await getLogsAdaptive(
       provider,
       { address: contractAddr, topics: [TRANSFER_TOPIC, null, addressTopics] },
       fromBlock,
@@ -220,10 +234,10 @@ async function pollOneBatch(
  * further behind on a fixed 50-block window.
  *
  * Retry note: transient 5xx/429 RPC errors are retried with backoff inside
- * getLogsChunked (see getLogsWithRetry above) so a single flaky chunk no
+ * getLogsAdaptive (see getLogsWithRetry above) so a single flaky range no
  * longer stalls the cursor on the same range for multiple whole cycles —
  * it resolves within one invocation the vast majority of the time. If a
- * chunk still fails after all retries, the error propagates up and the
+ * range still fails after all retries, the error propagates up and the
  * cycle fails cleanly (same as before): the cursor does NOT advance past
  * unprocessed blocks, so nothing gets silently skipped, and the next
  * scheduled cycle picks up from the same spot.
@@ -280,6 +294,16 @@ export async function pollEVMOnce(network: SupportedNetwork) {
         confirmationLag,
       );
       if (caughtUp) break;
+
+      // Surface visibility if the poller still can't keep up after exhausting
+      // all batches — indicates the chain is producing blocks faster than the
+      // poller can process them (throughput problem, not a bug).
+      if (i === MAX_BATCHES_PER_CYCLE - 1) {
+        console.warn(
+          `[EVM Poller/${network}] Still behind after ${MAX_BATCHES_PER_CYCLE} batches this cycle` +
+          ` — chain producing blocks faster than poller throughput`
+        );
+      }
     }
   } catch (err: any) {
     console.error(`[EVM Poller/${network}] Cycle failed:`, err.message);
