@@ -27,7 +27,13 @@ export const depositQueue = new Queue<DepositActivityJob>(DEPOSIT_QUEUE_NAME, {
  * avoid wasted queue churn.
  */
 export async function enqueueDepositActivity(network: string, activity: any) {
-  const dedupeId = `${activity.hash ?? 'nohash'}:${activity.logIndex ?? activity.uniqueId ?? '0'}`;
+  // Include toAddress in the dedupe key. For AA-bundled txs, Alchemy often drops
+  // logIndex. If a tx has multiple transfers (e.g. fee to bundler + deposit to user)
+  // they would all get the same dedupeId and BullMQ would drop all but the first.
+  // Adding toAddress ensures transfers to different recipients in the same tx
+  // are all enqueued and processed properly by the webhook path instantly.
+  const to = activity.toAddress?.toLowerCase() ?? 'noto';
+  const dedupeId = `${activity.hash ?? 'nohash'}:${to}:${activity.logIndex ?? activity.uniqueId ?? '0'}`;
   const opts: JobsOptions = { jobId: dedupeId };
   await depositQueue.add('process-activity', { network, activity, receivedAt: Date.now() }, opts);
 }

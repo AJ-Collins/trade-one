@@ -103,8 +103,8 @@ async function getLogsAdaptive(
 // be "safe enough", not identical, since creditDeposit() dedupes on txHash
 // regardless of which path (webhook or poller) gets there first.
 const CONFIRMATION_LAG: Partial<Record<SupportedNetwork, number>> = {
-  eth_mainnet:      12,
-  polygon_mainnet:  64,
+  eth_mainnet: 12,
+  polygon_mainnet: 64,
   arbitrum_mainnet: 1,
 };
 
@@ -113,8 +113,8 @@ const CONFIRMATION_LAG: Partial<Record<SupportedNetwork, number>> = {
 // "response too large"), so wider ranges are safe and dramatically improve
 // throughput on fast chains like Arbitrum (~4 blocks/sec).
 const BATCH_SIZE: Partial<Record<SupportedNetwork, number>> = {
-  eth_mainnet:      100,   // ~12 sec/block → 100 blocks ≈ 20 min
-  polygon_mainnet:  200,   //  ~2 sec/block → 200 blocks ≈  7 min
+  eth_mainnet: 100,   // ~12 sec/block → 100 blocks ≈ 20 min
+  polygon_mainnet: 200,   //  ~2 sec/block → 200 blocks ≈  7 min
   arbitrum_mainnet: 500,   // ~0.25s/block  → 500 blocks ≈  2 min
 };
 
@@ -316,13 +316,17 @@ export async function pollEVMOnce(network: SupportedNetwork) {
 }
 
 /**
- * Starts a fallback poller for one network. Interval defaults to 3 min —
- * this is a safety net, not the primary path, so it doesn't need to be fast
- * and shouldn't chew through Alchemy RPC quota.
+ * Starts a fallback poller for one network. With getLogsAdaptive, each
+ * steady-state cycle costs ~2 RPC calls (one per stablecoin contract) so
+ * short intervals are cheap. For Arbitrum — where Alchemy webhooks
+ * consistently miss AA-bundled transactions — this is effectively the
+ * primary deposit detection path, so it runs every 15s for near-instant
+ * crediting. ETH/Polygon keep longer intervals since their webhooks are
+ * more reliable and these just serve as a safety net.
  */
-export function startEVMPoller(network: SupportedNetwork, intervalMs = 180_000) {
+export function startEVMPoller(network: SupportedNetwork, intervalMs = 60_000) {
   console.log(
-    `[EVM Poller/${network}] Started as webhook fallback (every ${intervalMs / 1000}s)`
+    `[EVM Poller/${network}] Started (every ${intervalMs / 1000}s)`
   );
   pollEVMOnce(network);
   setInterval(() => pollEVMOnce(network), intervalMs);
@@ -337,7 +341,7 @@ export function startEVMPoller(network: SupportedNetwork, intervalMs = 180_000) 
  * poller (bsc-poller.ts) and doesn't use Alchemy webhooks.
  */
 export function startAllEVMFallbackPollers() {
-  startEVMPoller('eth_mainnet',      180_000);
-  startEVMPoller('polygon_mainnet',  185_000);
-  startEVMPoller('arbitrum_mainnet', 190_000);
+  startEVMPoller('eth_mainnet', 60_000);   // 60s — webhook is reliable, this is backup
+  startEVMPoller('polygon_mainnet', 45_000);   // 45s — webhook mostly reliable
+  startEVMPoller('arbitrum_mainnet', 15_000);   // 15s — effectively primary path (webhook misses AA txs)
 }

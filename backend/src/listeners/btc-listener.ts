@@ -17,8 +17,27 @@ const MIN_CONFIRMATIONS: Record<string, number> = {
   btc_testnet: 1,
 };
 
+async function axiosGetWithRetry(url: string, retries = 3, baseDelay = 2000): Promise<any> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await axios.get(url, { timeout: 10_000 });
+    } catch (err: any) {
+      if (attempt === retries) throw err;
+      const status = err.response?.status;
+      // Retry on 429 (Too Many Requests) or 5xx server errors, or network timeouts (!status)
+      if (status === 429 || (status >= 500 && status < 600) || !status) {
+        const delay = baseDelay * (2 ** attempt);
+        console.warn(`[BTC] Rate limited or transient error for ${url}, retrying in ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
+}
+
 async function getCurrentBlockHeight(base: string): Promise<number> {
-  const { data } = await axios.get(`${base}/blocks/tip/height`, { timeout: 10_000 });
+  const { data } = await axiosGetWithRetry(`${base}/blocks/tip/height`);
   return parseInt(data, 10);
 }
 
@@ -33,7 +52,7 @@ async function checkAddress(
   const base = API_BASE[network];
   const minConf = MIN_CONFIRMATIONS[network];
 
-  const { data: txs } = await axios.get(`${base}/address/${address}/txs`, { timeout: 10_000 });
+  const { data: txs } = await axiosGetWithRetry(`${base}/address/${address}/txs`);
   if (!Array.isArray(txs) || txs.length === 0) return;
 
   for (const tx of txs) {
@@ -88,14 +107,23 @@ async function poll(network: string) {
   // Fetch tip height once per poll cycle — shared across all address checks
   const tipHeight = await getCurrentBlockHeight(base);
 
-  // Process in chunks of 5 with a small delay to stay within rate limits
-  for (let i = 0; i < addresses.length; i += 5) {
-    const chunk = addresses.slice(i, i + 5);
-    await Promise.allSettled(
+  // Process in chunks of 3 with a larger delay to respect mempool.space's free tier limits
+  for (let i = 0; i < addresses.length; i += 3) {
+    const chunk = addresses.slice(i, i + 3);
+    const results = await Promise.allSettled(
       chunk.map(a => checkAddress(a.address, a.userId, network, tipHeight)),
     );
-    if (i + 5 < addresses.length) {
-      await new Promise(r => setTimeout(r, 300));
+
+    results.forEach((res, idx) => {
+      if (res.status === 'rejected') {
+        const err = res.reason;
+        const msg = err?.response?.data ? JSON.stringify(err.response.data) : (err?.message || String(err));
+        console.error(`[BTC/${network}] checkAddress error (${chunk[idx].address}):`, msg);
+      }
+    });
+
+    if (i + 3 < addresses.length) {
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
 }
@@ -106,7 +134,10 @@ export function startBTCListener(network: string, intervalMs = 60_000) {
 
   const run = async () => {
     try { await poll(network); }
-    catch (err: any) { console.error(`[BTC/${network}] Poll error:`, err.message); }
+    catch (err: any) {
+      const msg = err?.response?.data ? JSON.stringify(err.response.data) : (err?.message || String(err));
+      console.error(`[BTC/${network}] Poll error:`, msg);
+    }
   };
 
   run();
