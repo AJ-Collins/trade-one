@@ -12,6 +12,29 @@ import { Coin } from '@prisma/client';
 
 const TRANSFER_TOPIC = ethers.utils.id('Transfer(address,address,uint256)');
 
+const GETLOGS_CHUNK_SIZE = 10;
+
+async function getLogsChunked(
+  provider: ethers.providers.JsonRpcProvider,
+  params: { address: string; topics: (string | string[] | null)[] },
+  fromBlock: number,
+  toBlock: number,
+): Promise<ethers.providers.Log[]> {
+  const allLogs: ethers.providers.Log[] = [];
+  for (let start = fromBlock; start <= toBlock; start += GETLOGS_CHUNK_SIZE) {
+    const end = Math.min(start + GETLOGS_CHUNK_SIZE - 1, toBlock);
+    const logs = await provider.getLogs({
+      fromBlock: start,
+      toBlock: end,
+      address: params.address,
+      topics: params.topics,
+    });
+    allLogs.push(...logs);
+  }
+  return allLogs;
+}
+
+
 // Mirrors MIN_CONFIRMATIONS in depositWorker.ts — this poller only needs to
 // be "safe enough", not identical, since creditDeposit() dedupes on txHash
 // regardless of which path (webhook or poller) gets there first.
@@ -74,12 +97,12 @@ async function pollOneBatch(
   const contracts = await getStablecoinContracts(network);
 
   for (const contractAddr of Object.keys(contracts)) {
-    const logs = await provider.getLogs({
+    const logs = await getLogsChunked(
+      provider,
+      { address: contractAddr, topics: [TRANSFER_TOPIC, null, addressTopics] },
       fromBlock,
       toBlock,
-      address: contractAddr,
-      topics: [TRANSFER_TOPIC, null, addressTopics],
-    });
+    );
 
     for (const log of logs) {
       const to = ethers.utils.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
