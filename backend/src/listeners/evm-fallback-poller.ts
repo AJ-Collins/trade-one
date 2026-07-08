@@ -108,18 +108,21 @@ const CONFIRMATION_LAG: Partial<Record<SupportedNetwork, number>> = {
   arbitrum_mainnet: 1,
 };
 
-// How many blocks to request per getLogs call. Kept narrow to avoid Alchemy
-// response-size limits. The catch-up loop in pollEVMOnce() repeats this up to
-// MAX_BATCHES_PER_CYCLE times per invocation so fast chains actually catch up.
+// How many blocks per getLogs batch. With getLogsAdaptive each batch costs
+// ~1 RPC call per contract regardless of width (automatic binary-split on
+// "response too large"), so wider ranges are safe and dramatically improve
+// throughput on fast chains like Arbitrum (~4 blocks/sec).
 const BATCH_SIZE: Partial<Record<SupportedNetwork, number>> = {
-  eth_mainnet:      20,
-  polygon_mainnet:  50,
-  arbitrum_mainnet: 50,
+  eth_mainnet:      100,   // ~12 sec/block → 100 blocks ≈ 20 min
+  polygon_mainnet:  200,   //  ~2 sec/block → 200 blocks ≈  7 min
+  arbitrum_mainnet: 500,   // ~0.25s/block  → 500 blocks ≈  2 min
 };
 
 // Safety cap: don't let a single pollEVMOnce() call loop forever if the chain
-// is massively behind (e.g. after a long downtime). 20 batches × 50 blocks =
-// 1 000 Arbitrum blocks = ~4 min of chain time caught up in one cycle.
+// is massively behind (e.g. after a long downtime). 20 batches × 500 blocks =
+// 10 000 Arbitrum blocks ≈ 42 min of chain time caught up in one cycle.
+// Since Arbitrum produces ~760 blocks during the 190s interval, the poller
+// gains ~9 240 blocks per cycle — any realistic lag cleared in one pass.
 const MAX_BATCHES_PER_CYCLE = 20;
 
 // Track "running" per network independently so one slow chain doesn't block another.
