@@ -143,7 +143,6 @@ async function pollOneBatch(
   network: SupportedNetwork,
   provider: ethers.providers.JsonRpcProvider,
   watchMap: Map<string, { id: string; userId: string; address: string }>,
-  addressTopics: string[],
   lastBlockKey: string,
   batchSize: number,
   confirmationLag: number,
@@ -164,9 +163,14 @@ async function pollOneBatch(
   const contracts = await getStablecoinContracts(network);
 
   for (const contractAddr of Object.keys(contracts)) {
+    // Alchemy's Free Tier strictly limits eth_getLogs to a 10-block range if the
+    // query contains an OR condition (an array of addresses) in the topics filter.
+    // By omitting `addressTopics` and just querying for ALL transfers on the
+    // stablecoin contract, we bypass the 10-block limit (allowing 500+ blocks).
+    // The logs are then filtered locally in memory instantly via watchMap.
     const logs = await getLogsAdaptive(
       provider,
-      { address: contractAddr, topics: [TRANSFER_TOPIC, null, addressTopics] },
+      { address: contractAddr, topics: [TRANSFER_TOPIC] },
       fromBlock,
       toBlock,
     );
@@ -280,9 +284,6 @@ export async function pollEVMOnce(network: SupportedNetwork) {
     if (watched.length === 0) return;
 
     const watchMap = new Map(watched.map(w => [w.address.toLowerCase(), w]));
-    const addressTopics = watched.map(w =>
-      ethers.utils.hexZeroPad(w.address, 32).toLowerCase()
-    );
 
     // Catch-up loop — runs multiple batches in one invocation so fast chains
     // (Arbitrum/Polygon) don't accumulate an unbounded lag between cycles.
@@ -291,7 +292,6 @@ export async function pollEVMOnce(network: SupportedNetwork) {
         network,
         provider,
         watchMap,
-        addressTopics,
         lastBlockKey,
         batchSize,
         confirmationLag,
