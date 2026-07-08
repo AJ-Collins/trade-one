@@ -14,6 +14,56 @@ const TRANSFER_TOPIC = ethers.utils.id('Transfer(address,address,uint256)');
 
 const GETLOGS_CHUNK_SIZE = 10;
 
+// --- Retry-with-backoff for transient RPC errors ---------------------------
+// Alchemy occasionally returns 503 "Unable to complete request at this time"
+// for an otherwise-valid eth_getLogs call. Previously a single stuck chunk
+// would make the *whole* pollOneBatch() throw, which meant setConfig() never
+// ran and the cursor sat frozen on that exact range every cycle until the
+// transient error happened to clear on its own (observed: same block range
+// failing across two consecutive 90s cycles). Retrying a few times with
+// backoff inside the chunk loop resolves the overwhelming majority of these
+// within seconds, so the cursor keeps moving instead of stalling for cycles.
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+const MAX_RETRIES_PER_CHUNK = 4;
+const RETRY_BASE_DELAY_MS = 1000; // 1s, 2s, 4s, 8s
+
+function isRetryableRpcError(err: any): boolean {
+  if (err?.code === 'SERVER_ERROR' || err?.code === 'TIMEOUT' || err?.code === 'NETWORK_ERROR') return true;
+  const status = err?.status ?? err?.error?.status;
+  if (status && RETRYABLE_STATUS_CODES.has(Number(status))) return true;
+  // ethers wraps the raw response text/body — some providers only surface
+  // the status inside that string rather than as a top-level field.
+  const bodyText: string = err?.body ?? err?.error?.body ?? '';
+  if (typeof bodyText === 'string' && /"?status"?\s*[:=]\s*"?(429|500|502|503|504)"?/.test(bodyText)) return true;
+  return false;
+}
+
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function getLogsWithRetry(
+  provider: ethers.providers.JsonRpcProvider,
+  params: { address: string; topics: (string | string[] | null)[]; fromBlock: number; toBlock: number },
+): Promise<ethers.providers.Log[]> {
+  let lastErr: any;
+  for (let attempt = 0; attempt <= MAX_RETRIES_PER_CHUNK; attempt++) {
+    try {
+      return await provider.getLogs(params);
+    } catch (err: any) {
+      lastErr = err;
+      if (!isRetryableRpcError(err) || attempt === MAX_RETRIES_PER_CHUNK) throw err;
+      const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
+      console.warn(
+        `[EVM Poller] Transient RPC error on blocks ${params.fromBlock}-${params.toBlock}` +
+        ` (attempt ${attempt + 1}/${MAX_RETRIES_PER_CHUNK + 1}), retrying in ${delay}ms: ${err.message}`
+      );
+      await sleep(delay);
+    }
+  }
+  throw lastErr;
+}
+
 async function getLogsChunked(
   provider: ethers.providers.JsonRpcProvider,
   params: { address: string; topics: (string | string[] | null)[] },
@@ -23,7 +73,7 @@ async function getLogsChunked(
   const allLogs: ethers.providers.Log[] = [];
   for (let start = fromBlock; start <= toBlock; start += GETLOGS_CHUNK_SIZE) {
     const end = Math.min(start + GETLOGS_CHUNK_SIZE - 1, toBlock);
-    const logs = await provider.getLogs({
+    const logs = await getLogsWithRetry(provider, {
       fromBlock: start,
       toBlock: end,
       address: params.address,
@@ -168,6 +218,15 @@ async function pollOneBatch(
  * Loops through up to MAX_BATCHES_PER_CYCLE batches per invocation so fast
  * chains (Arbitrum ~0.25s/block, Polygon ~2s/block) don't fall progressively
  * further behind on a fixed 50-block window.
+ *
+ * Retry note: transient 5xx/429 RPC errors are retried with backoff inside
+ * getLogsChunked (see getLogsWithRetry above) so a single flaky chunk no
+ * longer stalls the cursor on the same range for multiple whole cycles —
+ * it resolves within one invocation the vast majority of the time. If a
+ * chunk still fails after all retries, the error propagates up and the
+ * cycle fails cleanly (same as before): the cursor does NOT advance past
+ * unprocessed blocks, so nothing gets silently skipped, and the next
+ * scheduled cycle picks up from the same spot.
  */
 export async function pollEVMOnce(network: SupportedNetwork) {
   if (runningFlags[network]) return;
