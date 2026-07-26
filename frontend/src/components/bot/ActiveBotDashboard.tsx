@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "../../lib/api";
-import { Square, Play, Trash2, Activity, Sliders, Terminal, Bot, TrendingUp, TrendingDown } from "lucide-react";
+import { Square, Play, Trash2, Activity, Sliders, Terminal, Bot, TrendingUp, TrendingDown, X } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 
 interface ActiveBotProps {
@@ -91,6 +91,8 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
   const assetDropdownRef = useRef<HTMLDivElement>(null);
   const intervalDropdownRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+
+  const [selectedTrade, setSelectedTrade] = useState<Trade | null>(null);
 
   // Trade notifications (center screen popups)
   const [tradeNotifs, setTradeNotifs] = useState<TradeNotif[]>([]);
@@ -643,40 +645,72 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
             </div>
           ) : dashboardTrades.length > 0 ? (
             /* Stacked Card Render Container */
-            <div className="divide-y divide-[#1a1f28]">
-              {dashboardTrades.map((t) => (
-                <div key={t.id} className="p-4 space-y-3 hover:bg-white/[0.01] transition-colors text-left">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-base">{t.asset}</span>
-                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${t.type === "WIN" ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"}`}>
-                        {/* Updated line below */}
-                        {t.type === "WIN" ? "PROFIT" : t.type}
+            <div className="divide-y divide-[#1a1f28]/50">
+              {dashboardTrades.map((t) => {
+                const isWin = t.profit >= 0;
+                const isBuy = t.type === "CALL" || t.type === "BUY" || t.type === "WIN"; // Assuming CALL/BUY based on logic, fallback to generic
+                
+                // Helper to get initials for the logo (e.g. GOLD/USD -> GO)
+                const getAssetInitials = (asset: string) => {
+                  if (asset.includes('GOLD') || asset.includes('XAU')) return 'GO';
+                  if (asset.includes('BTC')) return '₿';
+                  return asset.substring(0, 2).toUpperCase();
+                };
+
+                const dateObj = new Date(t.createdAt);
+                const timeString = dateObj.toLocaleTimeString("en-US", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                  hour12: false
+                });
+
+                // Mock lots based on stake if not provided
+                const lots = (t.stake / 100).toFixed(2);
+
+                return (
+                  <div 
+                    key={t.id} 
+                    onClick={() => setSelectedTrade(t)}
+                    className="p-3 sm:p-4 hover:bg-white/[0.02] transition-colors text-left flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-3 sm:gap-4">
+                      {/* Logo Box */}
+                      <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-br from-[#d4af37]/20 to-[#8a7322]/10 border border-[#d4af37]/30 flex items-center justify-center flex-shrink-0">
+                        <span className="text-[#d4af37] font-black text-sm sm:text-base tracking-tighter">
+                          {getAssetInitials(t.asset)}
+                        </span>
+                      </div>
+                      
+                      {/* Asset & Details */}
+                      <div className="flex flex-col gap-0.5 sm:gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-white text-sm sm:text-base tracking-wide">{t.asset}</span>
+                          <span className={`text-[9px] sm:text-[10px] font-black px-1.5 py-0.5 rounded uppercase ${
+                            isBuy ? "bg-[#39ff88]/15 text-[#39ff88]" : "bg-[#ff4d6d]/15 text-[#ff4d6d]"
+                          }`}>
+                            {isBuy ? "BUY" : "SELL"}
+                          </span>
+                        </div>
+                        <div className="text-[11px] sm:text-xs text-gray-400 font-medium">
+                          {lots} lots <span className="mx-1">•</span> {timeString}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Right side: P&L & Status */}
+                    <div className="flex flex-col items-end gap-0.5 sm:gap-1">
+                      <span className={`font-black text-sm sm:text-base tracking-wide ${isWin ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                        {isWin ? "+" : "-"}${Math.abs(t.profit).toFixed(2)}
+                      </span>
+                      <span className={`text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded uppercase ${
+                        isWin ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"
+                      }`}>
+                        {isWin ? "PROFIT" : "LOSS"}
                       </span>
                     </div>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${tradeStatusStyles[t.status] ?? tradeStatusStyles.STOPPED}`}>
-                      {t.status}
-                    </span>
                   </div>
-                  
-                  <div className="grid grid-cols-3 gap-2 text-xs border-t border-[#1a1f28]/50 pt-2">
-                    <div>
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Stake</p>
-                      <p className="text-gray-300 font-medium">${t.stake.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Payout</p>
-                      <p className="text-gray-300 font-medium">${t.payout.toFixed(2)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">P&L</p>
-                      <p className={`font-bold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
-                        {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
             /* Empty Data State */
@@ -686,6 +720,101 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
           )}
         </div>
       </div>
+
+      {/* Detail Bottom Drawer / Modal */}
+      {selectedTrade && (() => {
+        const isWin = selectedTrade.profit >= 0;
+        const isBuy = selectedTrade.type === "CALL" || selectedTrade.type === "BUY" || selectedTrade.type === "WIN";
+        
+        const getAssetInitials = (asset: string) => {
+          if (asset.includes('GOLD') || asset.includes('XAU')) return 'GO';
+          if (asset.includes('BTC')) return '₿';
+          return asset.substring(0, 2).toUpperCase();
+        };
+
+        const lots = (selectedTrade.stake / 100).toFixed(2);
+        
+        const dateObj = new Date(selectedTrade.createdAt);
+        const dateString = dateObj.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+        const timeString = dateObj.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+        return (
+          <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-sm" onClick={() => setSelectedTrade(null)}>
+            <div 
+              className="w-full sm:max-w-md bg-[#0d0f17] sm:border border-[#1a1f28] rounded-t-3xl sm:rounded-2xl p-6 sm:p-8 animate-slideUp sm:animate-fadeIn relative"
+              onClick={e => e.stopPropagation()}
+            >
+              <button onClick={() => setSelectedTrade(null)} className="absolute top-6 right-6 text-gray-500 hover:text-white transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+              
+              {/* Header */}
+              <div className="flex flex-col items-start gap-4 mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-[#d4af37]/20 to-[#8a7322]/10 border border-[#d4af37]/30 flex items-center justify-center flex-shrink-0">
+                  <span className="text-[#d4af37] font-black text-xl tracking-tighter">
+                    {getAssetInitials(selectedTrade.asset)}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <h2 className="text-2xl font-black text-white leading-none">Trade Details</h2>
+                  <p className="text-sm text-gray-400 font-medium">
+                    {selectedTrade.asset} • {lots} lots
+                  </p>
+                </div>
+              </div>
+              
+              <div className="w-full h-px bg-[#1a1f28] mb-6" />
+              
+              {/* Details Table */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 font-medium">Type</span>
+                  <span className={`text-[11px] font-black px-2 py-0.5 rounded uppercase ${
+                    isBuy ? "bg-[#39ff88]/15 text-[#39ff88]" : "bg-[#ff4d6d]/15 text-[#ff4d6d]"
+                  }`}>
+                    {isBuy ? "BUY" : "SELL"}
+                  </span>
+                </div>
+                <div className="w-full h-px bg-[#1a1f28]/50" />
+                
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 font-medium">Result</span>
+                  <span className={`text-[11px] font-black px-2 py-0.5 rounded uppercase ${
+                    isWin ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"
+                  }`}>
+                    {isWin ? "PROFIT" : "LOSS"}
+                  </span>
+                </div>
+                <div className="w-full h-px bg-[#1a1f28]/50" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 font-medium">P&L Amount</span>
+                  <span className={`text-sm font-bold ${isWin ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                    {isWin ? "+" : "-"}${Math.abs(selectedTrade.profit).toFixed(2)}
+                  </span>
+                </div>
+                <div className="w-full h-px bg-[#1a1f28]/50" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 font-medium">Stake</span>
+                  <span className="text-sm font-bold text-white text-right">
+                    ${selectedTrade.stake.toFixed(2)}
+                  </span>
+                </div>
+                <div className="w-full h-px bg-[#1a1f28]/50" />
+
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-gray-400 font-medium">Date & Time</span>
+                  <span className="text-sm font-bold text-white text-right">
+                    {dateString} at {timeString}
+                  </span>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
