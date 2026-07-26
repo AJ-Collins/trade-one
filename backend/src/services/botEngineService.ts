@@ -180,7 +180,11 @@ export async function executeTradeCycle(proBotId: number) {
 
   const { isWin, pnl, direction } = simulateTrade(microStake, cfg);
   const entryPrice = 1 + (Math.random() - 0.5) * 0.002;
-  const exitPrice = entryPrice + (pnl / microStake) * entryPrice;
+  const priceDeltaPct = pnl / microStake;
+  const exitPrice = direction === "BUY"
+    ? entryPrice * (1 + priceDeltaPct)
+    : entryPrice * (1 - priceDeltaPct);
+  
   const returnAmount = isWin
     ? microStake + pnl
     : isMarketer ? microStake + pnl : 0;
@@ -212,7 +216,7 @@ export async function executeTradeCycle(proBotId: number) {
         accountId: bot.accountId,
         proBotId: bot.id,
         asset: bot.asset,
-        type: isWin ? "WIN" : "LOSS",
+        type: direction,
         stake: microStake,
         payout: returnAmount,
         duration: bot.tradeInterval,
