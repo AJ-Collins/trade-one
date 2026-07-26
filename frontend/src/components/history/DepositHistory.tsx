@@ -102,10 +102,10 @@ export default function DepositHistory({ transactions }: HistoryProps) {
               {/* Right: Amounts */}
               <div className="flex flex-col items-end gap-0.5 text-right">
                 <span className="font-bold text-base text-[#39ff88]">
-                  +${usd ? usd.toFixed(2) : Number(tx.amount).toFixed(2)}
+                  +{Number(tx.amount)} {tx.coin}
                 </span>
                 <span className="text-[11px] text-gray-400 font-medium">
-                  +{Number(tx.amount)} {tx.coin}
+                  ≈ ${usd ? usd.toFixed(2) : Number(tx.amount).toFixed(2)}
                 </span>
               </div>
             </div>

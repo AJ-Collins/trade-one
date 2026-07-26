@@ -179,9 +179,11 @@ export default function DepositsPage() {
             </div>
             <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-xl px-6 py-3">
               <span className="text-[#39ff88] font-black text-xl font-mono">
-                +${creditedDeposit ? Number(creditedDeposit.usdValueAtCredit || creditedDeposit.amount).toFixed(2) : "0.00"}
+                +{creditedDeposit ? Number(creditedDeposit.amount) : "0"} {creditedDeposit?.coin}
               </span>
-              <p className="text-xs text-gray-500 mt-0.5">added to your account</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                ≈ ${creditedDeposit ? Number(creditedDeposit.usdValueAtCredit || creditedDeposit.amount).toFixed(2) : "0.00"} added to account
+              </p>
             </div>
             <button
               onClick={() => {

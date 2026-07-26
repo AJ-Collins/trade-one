@@ -4,9 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import api from "../lib/api";
 
 const statusStyles: Record<string, string> = {
-  COMPLETED: "bg-emerald-500/15 text-emerald-400",
-  RUNNING:   "bg-amber-500/15 text-amber-400",
-  STOPPED:   "bg-gray-500/15 text-gray-400",
+  PROFIT: "bg-emerald-500/15 text-emerald-400",
+  LOSS: "bg-red-500/15 text-red-400",
+  RUNNING: "bg-amber-500/15 text-amber-400",
+  CANCELLED: "bg-gray-500/15 text-gray-400",
 };
 
 const ITEMS_PER_PAGE = 10;
@@ -54,7 +55,7 @@ export default function TradesHistory() {
 
       {/* Main Container */}
       <div className="bg-[#0d0f17] border border-[#1a1f28] rounded-xl overflow-hidden">
-        
+
         {/* 1. LOADING STATE */}
         {isLoading ? (
           <>
@@ -104,38 +105,48 @@ export default function TradesHistory() {
           <>
             {/* 2. MOBILE CARD VIEW (Visible below 768px) */}
             <div className="md:hidden divide-y divide-[#1a1f28]">
-              {trades.map((t) => (
-                <div key={t.id} className="p-4 space-y-3 hover:bg-white/[0.01] transition-colors">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-white text-base">{t.asset}</span>
-                      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${t.type === "WIN" ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"}`}>
-                        {t.type}
+              {trades.map((t) => {
+                const displayStatus =
+                    t.status === "COMPLETED"
+                      ? t.profit >= 0
+                        ? "PROFIT"
+                        : "LOSS"
+                      : t.status === "RUNNING"
+                        ? "RUNNING"
+                        : "CANCELLED";
+                return (
+                  <div key={t.id} className="p-4 space-y-3 hover:bg-white/[0.01] transition-colors">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-white text-base">{t.asset}</span>
+                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${t.type === "BUY" ? "bg-[#39ff88]/10 text-[#39ff88]" : "bg-[#ff4d6d]/10 text-[#ff4d6d]"}`}>
+                          {t.type}
+                        </span>
+                      </div>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${statusStyles[displayStatus]}`}>
+                        {displayStatus}
                       </span>
                     </div>
-                    <span className={`text-[11px] font-semibold px-2 py-0.5 rounded ${statusStyles[t.status] ?? statusStyles.STOPPED}`}>
-                      {t.status}
-                    </span>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-2 text-xs border-t border-[#1a1f28]/50 pt-2">
-                    <div>
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Stake</p>
-                      <p className="text-gray-300 font-medium">${t.stake.toFixed(2)}</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Payout</p>
-                      <p className="text-gray-300 font-medium">${t.payout.toFixed(2)}</p>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">P&L</p>
-                      <p className={`font-bold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
-                        {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
-                      </p>
+
+                    <div className="grid grid-cols-3 gap-2 text-xs border-t border-[#1a1f28]/50 pt-2">
+                      <div>
+                        <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Stake</p>
+                        <p className="text-gray-300 font-medium">${t.stake.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">Payout</p>
+                        <p className="text-gray-300 font-medium">${t.payout.toFixed(2)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-gray-500 text-[10px] uppercase tracking-wider mb-0.5">P&L</p>
+                        <p className={`font-bold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                          {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
+                        </p>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {/* 3. DESKTOP TABLE VIEW (Visible above 768px) */}
@@ -151,24 +162,34 @@ export default function TradesHistory() {
                 </tr>
               </thead>
               <tbody>
-                {trades.map((t) => (
-                  <tr key={t.id} className="border-b border-[#1a1f28] last:border-0 hover:bg-white/[0.02] transition-colors">
-                    <td className="px-4 py-3 font-semibold text-white">{t.asset}</td>
-                    <td className={`px-4 py-3 font-bold text-xs ${t.type === "WIN" ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
-                      {t.type}
-                    </td>
-                    <td className="px-4 py-3 text-gray-300">${t.stake.toFixed(2)}</td>
-                    <td className="px-4 py-3 text-gray-300">${t.payout.toFixed(2)}</td>
-                    <td className={`px-4 py-3 font-semibold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
-                      {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={`text-xs font-semibold px-2 py-0.5 rounded ${statusStyles[t.status] ?? statusStyles.STOPPED}`}>
-                        {t.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {trades.map((t) => {
+                  const displayStatus =
+                    t.status === "COMPLETED"
+                      ? t.profit >= 0
+                        ? "PROFIT"
+                        : "LOSS"
+                      : t.status === "RUNNING"
+                        ? "RUNNING"
+                        : "CANCELLED";
+                  return (
+                    <tr key={t.id} className="border-b border-[#1a1f28] last:border-0 hover:bg-white/[0.02] transition-colors">
+                      <td className="px-4 py-3 font-semibold text-white">{t.asset}</td>
+                      <td className={`px-4 py-3 font-bold text-xs ${t.type === "BUY" ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                        {t.type}
+                      </td>
+                      <td className="px-4 py-3 text-gray-300">${t.stake.toFixed(2)}</td>
+                      <td className="px-4 py-3 text-gray-300">${t.payout.toFixed(2)}</td>
+                      <td className={`px-4 py-3 font-semibold ${t.profit >= 0 ? "text-[#39ff88]" : "text-[#ff4d6d]"}`}>
+                        {t.profit >= 0 ? "+" : ""}${t.profit.toFixed(2)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${statusStyles[displayStatus]}`}>
+                          {displayStatus}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </>
@@ -192,7 +213,7 @@ export default function TradesHistory() {
             </span>{" "}
             of <span className="text-white font-medium">{totalItems}</span> trades
           </div>
-          
+
           <div className="flex items-center justify-between sm:justify-end gap-2 w-full sm:w-auto order-1 sm:order-2">
             <button
               onClick={() => setCurrentPage(p => Math.max(p - 1, 1))}
