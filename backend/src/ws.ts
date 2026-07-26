@@ -1,6 +1,5 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { Server } from "http";
-import ccxt from "ccxt";
 import IORedis from "ioredis";
 import { setProBotBroadcaster } from "./services/botEngineService.js";
 
@@ -11,7 +10,9 @@ function sendToSubscribers(proBotId: number, payload: any) {
   if (!clients) return;
   const message = JSON.stringify(payload);
   clients.forEach((client) => {
-    if (client.readyState === WebSocket.OPEN) client.send(message);
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
   });
 }
 
@@ -19,7 +20,6 @@ export function setupWebSocket(server: Server) {
   const wss = new WebSocketServer({ server, path: "/ws" });
 
   // Redis subscriber — receives ALL broadcasts (both from API process and worker process)
-  // This is the ONLY path to WebSocket clients. localBroadcast is set to a no-op below.
   const redisSub = new IORedis({
     host: process.env.REDIS_HOST || "redis",
     port: 6379,
@@ -39,49 +39,45 @@ export function setupWebSocket(server: Server) {
   });
 
   // Set localBroadcast to no-op — Redis is the single delivery path.
-  // broadcast() in botEngineService always publishes to Redis,
-  // and redisSub above delivers it to WS clients.
   setProBotBroadcaster(() => {});
 
-  wss.on("connection", (ws) => {
-    let tickerInterval: ReturnType<typeof setInterval> | null = null;
-    let currentSubscribedBotId: number | null = null;
+  // ── Ping/Pong Heartbeat to keep connections alive through proxies ──────────
+  const heartbeatInterval = setInterval(() => {
+    wss.clients.forEach((ws: any) => {
+      if (ws.isAlive === false) {
+        // Cleanup dead connection map entries manually
+        if (ws.currentSubscribedBotId && botSubscribers.has(ws.currentSubscribedBotId)) {
+          botSubscribers.get(ws.currentSubscribedBotId)?.delete(ws);
+        }
+        return ws.terminate();
+      }
+      ws.isAlive = false;
+      ws.ping();
+    });
+  }, 30000);
 
-    ws.on("message", async (raw) => {
+  wss.on("close", () => {
+    clearInterval(heartbeatInterval);
+  });
+
+  wss.on("connection", (ws: any) => {
+    ws.isAlive = true;
+    ws.currentSubscribedBotId = null;
+
+    ws.on("pong", () => {
+      ws.isAlive = true;
+    });
+
+    ws.on("message", (raw: any) => {
       try {
         const msg = JSON.parse(raw.toString());
 
-        if (msg.type === "subscribe" && msg.exchange && msg.symbol) {
-          if (tickerInterval) clearInterval(tickerInterval);
-          const ex = new (ccxt as any)[msg.exchange.toLowerCase()]({ enableRateLimit: true });
-          const tick = async () => {
-            try {
-              const ticker = await ex.fetchTicker(msg.symbol.replace("-", "/"));
-              if (ws.readyState === WebSocket.OPEN) {
-                ws.send(JSON.stringify({
-                  type: "ticker",
-                  data: {
-                    last: ticker.last,
-                    bid: ticker.bid,
-                    ask: ticker.ask,
-                    change: ticker.change,
-                    percentage: ticker.percentage,
-                    volume: ticker.baseVolume,
-                  },
-                }));
-              }
-            } catch {}
-          };
-          await tick();
-          tickerInterval = setInterval(tick, 5000);
-        }
-
         if (msg.type === "subscribe_bot" && msg.proBotId) {
           const botId = Number(msg.proBotId);
-          if (currentSubscribedBotId && botSubscribers.has(currentSubscribedBotId)) {
-            botSubscribers.get(currentSubscribedBotId)?.delete(ws);
+          if (ws.currentSubscribedBotId && botSubscribers.has(ws.currentSubscribedBotId)) {
+            botSubscribers.get(ws.currentSubscribedBotId)?.delete(ws);
           }
-          currentSubscribedBotId = botId;
+          ws.currentSubscribedBotId = botId;
           if (!botSubscribers.has(botId)) botSubscribers.set(botId, new Set());
           botSubscribers.get(botId)?.add(ws);
         }
@@ -89,9 +85,8 @@ export function setupWebSocket(server: Server) {
     });
 
     ws.on("close", () => {
-      if (tickerInterval) clearInterval(tickerInterval);
-      if (currentSubscribedBotId && botSubscribers.has(currentSubscribedBotId)) {
-        botSubscribers.get(currentSubscribedBotId)?.delete(ws);
+      if (ws.currentSubscribedBotId && botSubscribers.has(ws.currentSubscribedBotId)) {
+        botSubscribers.get(ws.currentSubscribedBotId)?.delete(ws);
       }
     });
   });

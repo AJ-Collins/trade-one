@@ -34,8 +34,9 @@ function randomScanMessage(asset: string): string {
 }
 
 function nextTradeDelaySec(intervalSec: number): number {
-  const minGap = Math.max(4, intervalSec * 0.12);
-  const maxGap = Math.max(minGap + 2, intervalSec * 0.3);
+  // Consistently fast trade interval (4 to 8 seconds) regardless of session length
+  const minGap = 4;
+  const maxGap = 8;
   return minGap + Math.random() * (maxGap - minGap);
 }
 
