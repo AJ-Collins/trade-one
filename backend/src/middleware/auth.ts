@@ -1,6 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
-import prisma from '../utils/prisma.js';
 
 export interface AuthRequest extends Request {
   userId?: string;
@@ -14,15 +13,12 @@ export async function authenticate(req: AuthRequest, res: Response, next: NextFu
   if (!token) return res.status(401).json({ error: "Unauthorized" });
 
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string };
-
-    const user = await prisma.user.findUnique({ where: { id: payload.userId } });
-    if (!user) return res.status(401).json({ error: "User not found" });
-
-    req.user = user;
-    req.userId = user.id;
+    const payload = jwt.verify(token, process.env.JWT_SECRET!) as { userId: string; role?: string };
+    // Attach userId from the verified JWT — no DB lookup needed here.
+    // Routes that need the full user object should fetch it themselves.
+    req.userId = payload.userId;
+    req.user = { id: payload.userId, role: payload.role };
     next();
-
   } catch (err) {
     res.status(401).json({ error: "Invalid token" });
   }

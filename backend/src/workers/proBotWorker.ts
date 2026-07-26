@@ -115,8 +115,10 @@ async function processTradeCycle(job: Job) {
 
 const worker = new Worker('pro-bot-trades', processTradeCycle, {
   connection,
-  concurrency: 100,
-  limiter: { max: 200, duration: 1000 },
+  // 30 concurrent slots per process. With 3 replicas = 90 total.
+  // Each job does ~4–6 DB ops; 30 × 6 = 180 simultaneous DB ops — well within
+  // Postgres limits while still handling hundreds of active bots.
+  concurrency: 30,
   lockDuration: 30_000,
 });
 

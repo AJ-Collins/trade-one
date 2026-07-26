@@ -53,24 +53,18 @@ export class BotService {
   }
 
   static async getActiveBotByUserId(userId: string) {
+    // Only fetch the bot + account. Trades and logs are fetched via their own
+    // dedicated endpoints (/user/trades, /bot/:id/stats) — no need to over-fetch here.
     return prisma.proBot.findFirst({
       where: { userId },
-      include: {
-        account: true,
-        trades: { orderBy: { createdAt: "desc" }, take: 10 },
-        logs: { orderBy: { createdAt: "desc" }, take: 20 }
-      }
+      include: { account: true },
     });
   }
 
   static async getBotById(id: number) {
     return prisma.proBot.findUnique({
-      where: { id: id },
-      include: {
-        account: true, 
-        trades: { orderBy: { createdAt: "desc" }, take: 100 },
-        logs: { orderBy: { createdAt: "desc" }, take: 50 }
-      }
+      where: { id },
+      include: { account: true },
     });
   }
 

@@ -1,24 +1,20 @@
 import { Response, NextFunction } from 'express'
-import { createClient } from 'redis'
+import IORedis from 'ioredis'
 
-// Initialise Redis Client
-const redisClient = createClient({
-  url: process.env.REDIS_URL || 'redis://redis:6379'
+// Use the same ioredis client as the rest of the app (no third Redis connection)
+const redisClient = new IORedis({
+  host: process.env.REDIS_HOST || 'redis',
+  port: Number(process.env.REDIS_PORT || 6379),
+  password: process.env.REDIS_PASSWORD || undefined,
+  maxRetriesPerRequest: null,
+  enableReadyCheck: false,
 })
 
-redisClient.on('error', (err) => console.error('Redis Rate Limiter Error:', err))
+redisClient.on('error', (err: Error) => console.error('Redis Rate Limiter Error:', err.message))
 
-// Self-executing connection link
 let isRedisConnected = false;
-(async () => {
-  try {
-    await redisClient.connect()
-    isRedisConnected = true
-    console.log('Rate limiter successfully hooked into Redis Cache.')
-  } catch (err) {
-    console.error('Failed to connect to Redis, falling back to open access:', err)
-  }
-})()
+redisClient.on('connect', () => { isRedisConnected = true; });
+redisClient.on('close',   () => { isRedisConnected = false; });
 
 /**
  * Redis-backed sliding window check.
@@ -32,31 +28,25 @@ async function slidingWindowCheck(
   const windowStart = now - windowMs
   const redisKey = `ratelimit:${key}`
 
-  // Atomic operation pipeline: clean old requests and count remaining active ones
-  const [_, currentCount] = await redisClient
-    .multi()
-    .zRemRangeByScore(redisKey, '-inf', windowStart)
-    .zCard(redisKey)
-    .exec() as unknown as [number, number]
+  // Use ioredis pipeline
+  const pipeline = redisClient.pipeline();
+  pipeline.zremrangebyscore(redisKey, '-inf', windowStart);
+  pipeline.zcard(redisKey);
+  const results = await pipeline.exec() as Array<[Error | null, any]>;
+  const currentCount = (results[1][1] as number) ?? 0;
 
   if (currentCount >= max) {
-    // Fetch the score of the oldest active request in the window to calculate precise reset time
-    const oldestEntry = await redisClient.zRangeWithScores(redisKey, 0, 0)
-    const oldestTs = oldestEntry.length > 0 ? oldestEntry[0].score : now
+    const oldestEntry = await redisClient.zrange(redisKey, 0, 0, 'WITHSCORES');
+    const oldestTs = oldestEntry.length > 1 ? parseFloat(oldestEntry[1]) : now
     const resetAfterMs = oldestTs + windowMs - now
-
     return { allowed: false, remaining: 0, resetAfterMs }
   }
 
-  // Generate a unique value identifier to allow identical millisecond entries
   const uniqueMember = `${now}:${Math.random()}`
-
-  // Log the current hit and extend the sliding cache lifecycle
-  await redisClient
-    .multi()
-    .zAdd(redisKey, { score: now, value: uniqueMember })
-    .expire(redisKey, Math.ceil(windowMs / 1000))
-    .exec()
+  const p2 = redisClient.pipeline();
+  p2.zadd(redisKey, now, uniqueMember);
+  p2.expire(redisKey, Math.ceil(windowMs / 1000));
+  await p2.exec();
 
   return {
     allowed: true,
@@ -148,9 +138,11 @@ export const loginLimiter = createSlidingWindowLimiter({
 
 export const botActionLimiter = createSlidingWindowLimiter({
   windowMs: 1 * 60 * 1000, // 1 minute window
-  max: 60,                // Allow up to 60 requests a minute (1 request per second average)
+  max: 300,                 // Generous limit — GET /stats polls every 3s
   message: { error: 'Rate limit exceeded. System configurations are processing, please slow down.' },
-  keyGenerator: (req) => req.userId ?? req.ip ?? 'unknown', // Track by logged-in User ID
+  keyGenerator: (req) => req.userId ?? req.ip ?? 'unknown',
+  // Skip rate-limiting on read-only GET requests (stats polling etc.)
+  skip: (req) => req.method === 'GET',
 })
 
 export const adminOnly = (...roles: string[]) => {

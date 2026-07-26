@@ -84,8 +84,8 @@ export class BotController {
   static async startBot(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      const bot = await BotService.updateBotStatus(id, "RUNNING");
-      await BotEngineService.activateProBot(id);
+      // activateProBot handles the status update and balance check internally
+      const bot = await BotEngineService.activateProBot(id);
       res.json(bot);
     } catch (e: any) {
       const status = e.message.includes('Insufficient') ? 400 : 500;
@@ -96,10 +96,9 @@ export class BotController {
   static async stopBot(req: Request, res: Response) {
     try {
       const id = Number(req.params.id);
-      // FIX: Changed "stopped" to "STOPPED" to match ProBotStatus enum
-      const bot = await BotService.updateBotStatus(id, "STOPPED");
-      await BotEngineService.stopProBot(id);
-      res.json(bot);
+      // stopProBot handles the status update internally
+      const bot = await BotEngineService.stopProBot(id);
+      res.json(bot ?? { id, status: 'STOPPED' });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
@@ -120,15 +119,17 @@ export class BotController {
     try {
       const id = Number(req.params.id);
       const { status } = req.body; // 'running' or 'stopped'
-      
-      // Call the existing startBot or stopBot services based on status
-      if (status === "running") {
-        await BotController.startBot(req, res);
+
+      if (status === 'running') {
+        const bot = await BotEngineService.activateProBot(id);
+        return res.json(bot);
       } else {
-        await BotController.stopBot(req, res);
+        const bot = await BotEngineService.stopProBot(id);
+        return res.json(bot ?? { id, status: 'STOPPED' });
       }
     } catch (e: any) {
-      res.status(500).json({ error: e.message });
+      const status = e.message.includes('Insufficient') ? 400 : 500;
+      return res.status(status).json({ error: e.message });
     }
   }
 

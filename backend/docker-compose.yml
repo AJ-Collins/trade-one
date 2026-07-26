@@ -3,14 +3,20 @@ services:
     image: postgres:15-alpine
     container_name: aiscalping_db
     restart: always
-
-    # ports:
-    #   - "5432:5432"
-
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+      # Raise max_connections so all service pools fit comfortably (default=100)
+      POSTGRES_INITDB_ARGS: ""
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=512MB
+        -c work_mem=4MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -26,7 +32,8 @@ services:
     restart: always
     volumes:
       - redis_data:/data
-    command: redis-server --appendonly yes
+    # Raise max clients and tune memory for high concurrent bot usage
+    command: redis-server --appendonly yes --maxclients 500 --tcp-backlog 511
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -48,7 +55,9 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # connection_limit: max DB connections this process opens (Prisma pool)
+      # pool_timeout: seconds to wait for a free connection before erroring
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=10&pool_timeout=15
     ports:
       - "5000:5000"
     command: sh -c "npx prisma migrate deploy && node dist/server.js"
@@ -75,7 +84,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=15
     command: node dist/workers/index.js
 
   sweeper-worker:
@@ -94,7 +103,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=15
     command: node dist/workers/sweeperIndex.js
 
   listener-worker:
@@ -113,9 +122,15 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=15
     command: node dist/workers/listenerIndex.js
 
+  # ── probot-worker scaled to 3 replicas ─────────────────────────────────────
+  # Each replica runs concurrency=30, so 3×30 = 90 simultaneous trade-cycle jobs.
+  # Each job now does ~4 DB ops (down from ~10 before log buffering).
+  # Connection budget: 3 replicas × 8 connections = 24 DB connections for all bot workers.
+  # No container_name — required to allow multiple replicas.
+  # ─────────────────────────────────────────────────────────────────────────────
   probot-worker:
     image: aiscalping-backend
     restart: always
@@ -131,7 +146,8 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      # 8 connections per replica × 3 replicas = 24 total for bot workers
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=8&pool_timeout=15
     command: node dist/workers/proBotWorker.js
 
   email-worker:
@@ -150,7 +166,7 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?connection_limit=5&pool_timeout=15
     command: node dist/workers/emailWorker.js
 
 volumes:
