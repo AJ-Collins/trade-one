@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Transaction } from "../../types/index";
 import { CheckCircle2, Clock, XCircle, Copy, Check, X, ExternalLink } from "lucide-react";
+import { getExplorerUrl } from "../../lib/transactionFormat";
 
 interface HistoryProps {
   transactions: Transaction[];
@@ -193,9 +194,19 @@ export default function DepositHistory({ transactions }: HistoryProps) {
               )}
             </div>
 
-            <button className="mt-8 w-full bg-[#1a1f28] hover:bg-[#252b38] text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm">
-              View on blockchain explorer <ExternalLink className="w-4 h-4" />
-            </button>
+            {(() => {
+              const explorerUrl = getExplorerUrl(selectedTx.coin, selectedTx.network, selectedTx.txHash);
+                return explorerUrl ? (
+                  <a
+                    href={explorerUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-8 w-full bg-[#1a1f28] hover:bg-[#252b38] text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2 text-sm"
+                  >
+                    View on blockchain explorer <ExternalLink className="w-4 h-4" />
+                  </a>
+              ) : null;
+            })()}
           </div>
         </div>
       )}

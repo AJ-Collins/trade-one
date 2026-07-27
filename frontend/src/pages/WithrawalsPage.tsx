@@ -269,7 +269,7 @@ export default function WithdrawalsPage() {
 
           {historyLoading ? (
             <div className="text-xs text-gray-500 py-10 text-center tracking-wider animate-pulse">
-              Loading withdrawal history...
+              Loading history...
             </div>
           ) : history.length === 0 ? (
             <div className="text-center py-8">
