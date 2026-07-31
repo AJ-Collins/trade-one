@@ -1,4 +1,4 @@
-export type UserRole = "USER" | "MARKETER" | "ADMIN";
+export type UserRole = "USER" | "ADMIN";
 
 export interface User {
   id: string;
@@ -123,9 +123,8 @@ export interface KYCSubmission {
 }
 
 export interface KYCStatus {
-  kycStatus: "UNVERIFIED" | "PENDING" | "VERIFIED";
+  status: "UNVERIFIED" | "PENDING" | "VERIFIED";
   lastSubmission?: KYCSubmission;
-  verification?: KYCSubmission; // the most recent submission, whether pending or reviewed
 }
 
 // Data Array mapped to match your exact image constraints and CDN links
@@ -148,8 +147,8 @@ export const CRYPTO_OPTIONS: CryptoAsset[] = [
     name: "Bitcoin", 
     symbol: "BTC", 
     networks: [
-      { name: "Bitcoin", fee: 2.50 },
-      { name: "Lightning", fee: 0.05 }
+      { name: "Native Bitcoin", fee: 2.50 },
+      { name: "Lightning Network", fee: 0.05 }
     ] 
   },
   { 
