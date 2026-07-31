@@ -72,11 +72,10 @@ async function processTradeCycle(job: Job) {
     return;
   }
 
-  // ── Scan logs before trade ────────────────────────────────────────────────
+  // ── Scan logs before trade (fire concurrently) ─────────────────────────────
   const scanCount = 1 + Math.floor(Math.random() * 2);
-  for (let i = 0; i < scanCount; i++) {
-    await log(proBotId, randomScanMessage(bot.asset), 'INFO');
-  }
+  const scanMsgs = Array.from({ length: scanCount }, () => randomScanMessage(bot.asset));
+  await Promise.all(scanMsgs.map(msg => log(proBotId, msg, 'INFO')));
 
   // ── Execute trade ─────────────────────────────────────────────────────────
   try {

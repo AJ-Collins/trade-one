@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, memo } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "../../lib/api";
 import { Square, Play, Trash2, Activity, Sliders, Terminal, Bot, TrendingUp, TrendingDown, X } from "lucide-react";
@@ -8,6 +8,31 @@ interface ActiveBotProps {
   bot: { id: number; name: string; version: string; description: string; status: string; settings?: any };
   onDeactivate: () => void;
 }
+
+// Memoized log line — only re-renders when the log text changes
+const LogLine = memo(({ log, index }: { log: string; index: number }) => {
+  const isWin = log.includes("✓ WIN");
+  const isLoss = log.includes("✗ LOSS");
+  const isExecution = log.includes("[EXECUTION]");
+  const isSystem = log.includes("[SYSTEM]");
+  const isError = log.includes("ERROR") || log.includes("halting");
+  return (
+    <div className="flex gap-2 px-1 py-0.5 group">
+      <span className="text-gray-600 shrink-0">{">"}</span>
+      <span className={`break-all ${
+        isWin ? "text-[#39ff88] font-semibold" :
+        isLoss ? "text-red-400 font-semibold" :
+        isExecution ? "text-[#39ff88]/80" :
+        isError ? "text-orange-400" :
+        isSystem ? "text-blue-400" :
+        "text-gray-400"
+      }`}>
+        {log}
+      </span>
+    </div>
+  );
+});
+LogLine.displayName = 'LogLine';
 
 // Trade notification shown in the center of screen
 interface TradeNotif {
@@ -100,8 +125,8 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
 
   const showTradeNotif = useCallback((notif: Omit<TradeNotif, 'id'>) => {
     const id = ++notifCounterRef.current;
-    setTradeNotifs(prev => [...prev, { ...notif, id }]);
-    // Auto-dismiss after 2.5s
+    // Cap at 3 concurrent notifications to prevent setTimeout storms
+    setTradeNotifs(prev => [...prev.slice(-2), { ...notif, id }]);
     setTimeout(() => {
       setTradeNotifs(prev => prev.filter(n => n.id !== id));
     }, 2500);
@@ -133,7 +158,9 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
       const res = await api.get(`/bot/${bot.id}/stats`);
       return res.data;
     },
-    refetchInterval: status === "running" ? 3000 : false,
+    // WS delivers live stats already — only poll as fallback every 15s
+    refetchInterval: status === "running" ? 15000 : false,
+    staleTime: 10000,
   });
 
   const liveStats = statsData || { executions: 0, winRate: 0, pnl: 0, balance: 0 };
@@ -158,8 +185,14 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
 
   useEffect(() => {
     if (status !== "running") { setProgress(0); return; }
-    const interval = setInterval(() => setProgress((p) => (p >= 100 ? 0 : p + 1)), 600);
-    return () => clearInterval(interval);
+    let raf: number;
+    let last = performance.now();
+    const tick = (now: number) => {
+      if (now - last >= 600) { setProgress((p) => (p >= 100 ? 0 : p + 1)); last = now; }
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [status]);
 
   useEffect(() => {
@@ -203,79 +236,107 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // ── WebSocket — persistent connection, not tied to status ──────────────────
-  // Stays open even after bot stops so final logs (stop message) always arrive
+  // ── WebSocket — persistent connection with exponential-backoff reconnect ───
   useEffect(() => {
     if (!WS_URL) return;
+    let retryDelay = 1000;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let disposed = false;
 
-    const ws = new WebSocket(WS_URL);
-    wsRef.current = ws;
+    function connect() {
+      if (disposed) return;
+      const ws = new WebSocket(WS_URL);
+      wsRef.current = ws;
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "subscribe_bot", proBotId: bot.id }));
-    };
+      ws.onopen = () => {
+        retryDelay = 1000; // reset backoff on success
+        ws.send(JSON.stringify({ type: "subscribe_bot", proBotId: bot.id }));
+      };
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
 
-      if (data.message_type === "log") {
-        const logLine: string = data.log;
-        // Append log — keep last 100 lines
-        setLogs(prev => [...prev.slice(-99), logLine]);
+        if (data.message_type === "log") {
+          const logLine: string = data.log;
+          setLogs(prev => [...prev.slice(-99), logLine]);
+          const notif = parseTradeNotif(logLine);
+          if (notif) showTradeNotif(notif);
+        }
 
-        // Check if this log line is a completed trade — show center notif
-        const notif = parseTradeNotif(logLine);
-        if (notif) showTradeNotif(notif);
-      }
-
-      if (data.message_type === "bot") {
-        const d = data.data;
-        if (d) {
-          setLiveBotData({
-            tradeCount: d.tradeCount,
-            wins: d.wins,
-            profit: d.profit,
-            balance: d.balance,
-          });
-          if (d?.balance !== undefined) {
-            queryClient.setQueryData(['accountBalance'], { balance: d.balance, currency: "USD" });
+        if (data.message_type === "bot") {
+          const d = data.data;
+          if (d) {
+            setLiveBotData({
+              tradeCount: d.tradeCount,
+              wins: d.wins,
+              profit: d.profit,
+              balance: d.balance,
+            });
+            if (d?.balance !== undefined) {
+              queryClient.setQueryData(['accountBalance'], { balance: d.balance, currency: "USD" });
+            }
+          }
+          if (d?.status === "STOPPED") {
+            setStatus("stopped");
+            setSessionStart((start) => {
+              if (start && d) {
+                setLastSessionResult({ pnl: d.profit - start.profit, balance: d.balance });
+              }
+              return start;
+            });
           }
         }
-        if (d?.status === "STOPPED") {
-          setStatus("stopped");
-          setSessionStart((start) => {
-            if (start && d) {
-              setLastSessionResult({ pnl: d.profit - start.profit, balance: d.balance });
-            }
-            return start;
-          });
-        }
-      }
 
-      if (data.message_type === "progress") {
-        setServerElapsed(data.data.elapsed);
-        setServerInterval(data.data.interval);
-        lastProgressMsgAt.current = Date.now();
-      }
-    };
-
-    ws.onclose = () => {
-      // Reconnect after 2s if bot is still running
-      setTimeout(() => {
-        if (wsRef.current?.readyState === WebSocket.CLOSED) {
-          wsRef.current = null;
+        if (data.message_type === "progress") {
+          setServerElapsed(data.data.elapsed);
+          setServerInterval(data.data.interval);
+          lastProgressMsgAt.current = Date.now();
         }
-      }, 2000);
-    };
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!disposed) {
+          // Exponential backoff reconnect: 1s → 2s → 4s → 8s → max 15s
+          retryTimer = setTimeout(() => { connect(); }, retryDelay);
+          retryDelay = Math.min(retryDelay * 2, 15000);
+        }
+      };
+
+      ws.onerror = () => { ws.close(); };
+    }
+
+    connect();
 
     return () => {
-      ws.close();
+      disposed = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      wsRef.current?.close();
       wsRef.current = null;
     };
   }, [bot.id, WS_URL]); // No `status` dependency — connection stays alive
 
+  // Debounced auto-scroll — only if user hasn't scrolled up manually
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledUp = useRef(false);
+
   useEffect(() => {
-    terminalEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const onScroll = () => {
+      // "scrolled up" = more than 80px from bottom
+      userScrolledUp.current = el.scrollHeight - el.scrollTop - el.clientHeight > 80;
+    };
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (userScrolledUp.current) return;
+    // Use rAF to batch with browser paint instead of forcing layout
+    requestAnimationFrame(() => {
+      terminalEndRef.current?.scrollIntoView({ behavior: "auto" });
+    });
   }, [logs]);
 
   const toggleStatusMutation = useMutation({
@@ -327,8 +388,9 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
       });
       return data as { trades: Trade[]; total: number };
     },
-    // Automatically refresh the trades feed every 4 seconds if the bot is actively running
-    refetchInterval: status === "running" ? 4000 : false,
+    // Relaxed polling — WS covers real-time, this is a background sync
+    refetchInterval: status === "running" ? 10000 : false,
+    staleTime: 8000,
   });
 
   const dashboardTrades = tradesData?.trades ?? [];
@@ -575,35 +637,16 @@ export default function ActiveBotDashboard({ bot, onDeactivate }: ActiveBotProps
             <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/20 border border-yellow-500/50" />
             <div className="w-2.5 h-2.5 rounded-full bg-green-500/20 border border-green-500/50" />
           </div>
-          <div className="p-4 h-70 overflow-y-auto font-mono text-[11px] space-y-1 scrollbar-thin scrollbar-thumb-[#1a1f28] scrollbar-track-transparent text-left">
+          <div ref={scrollContainerRef} className="p-4 h-70 overflow-y-auto font-mono text-[11px] space-y-1 scrollbar-thin scrollbar-thumb-[#1a1f28] scrollbar-track-transparent text-left">
             {logs.length === 0 ? (
               <div className="flex items-center gap-2 text-gray-600">
                 <span className="text-[#39ff88]/50">{">"}</span>
                 <span className="italic">Bot standing by... waiting for engagement.</span>
               </div>
             ) : (
-              logs.map((log, index) => {
-                const isWin = log.includes("✓ WIN");
-                const isLoss = log.includes("✗ LOSS");
-                const isExecution = log.includes("[EXECUTION]");
-                const isSystem = log.includes("[SYSTEM]");
-                const isError = log.includes("ERROR") || log.includes("halting");
-                return (
-                  <div key={index} className="flex gap-2 px-1 py-0.5 group">
-                    <span className="text-gray-600 shrink-0">{">"}</span>
-                    <span className={`break-all ${
-                      isWin ? "text-[#39ff88] font-semibold" :
-                      isLoss ? "text-red-400 font-semibold" :
-                      isExecution ? "text-[#39ff88]/80" :
-                      isError ? "text-orange-400" :
-                      isSystem ? "text-blue-400" :
-                      "text-gray-400"
-                    }`}>
-                      {log}
-                    </span>
-                  </div>
-                );
-              })
+              logs.map((log, index) => (
+                <LogLine key={index} log={log} index={index} />
+              ))
             )}
             {status === "running" && (
               <div className="flex items-center gap-2 px-1 pt-1">

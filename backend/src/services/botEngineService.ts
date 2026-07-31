@@ -42,11 +42,12 @@ interface LogEntry {
 
 const logBuffer: LogEntry[] = [];
 const LOG_FLUSH_MS = 2000;
-const LOG_FLUSH_BATCH = 100;
+const LOG_FLUSH_BATCH = 5000; // Increased from 100 to support 200+ concurrent bots
 
 async function flushLogBuffer() {
   if (logBuffer.length === 0) return;
-  const batch = logBuffer.splice(0, LOG_FLUSH_BATCH);
+  // Flush up to 5000 logs at once to prevent memory leaks under heavy load
+  const batch = logBuffer.splice(0, Math.min(logBuffer.length, LOG_FLUSH_BATCH));
   try {
     await prisma.proBotLog.createMany({ data: batch, skipDuplicates: true });
   } catch (err) {
@@ -71,11 +72,12 @@ export async function log(proBotId: number, message: string, level: LogLevel = "
   // Buffer for async bulk DB write
   logBuffer.push({ proBotId, message, level, createdAt: new Date() });
 
-  // Broadcast immediately for real-time terminal (non-blocking path)
-  await broadcast(proBotId, {
+  // Broadcast immediately for real-time terminal — fire-and-forget so trade
+  // cycles aren't blocked waiting for Redis publish round-trips.
+  broadcast(proBotId, {
     message_type: "log",
     log: `[${new Date().toLocaleTimeString()}] ${message}`,
-  });
+  }).catch(() => {});
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -289,18 +291,8 @@ export async function stopProBot(proBotId: number) {
     include: { account: true },
   });
 
-  // Drain pending/delayed queue jobs — non-fatal if this fails
-  try {
-    const jobs = await tradeQueue.getJobs(['delayed', 'waiting']);
-    await Promise.all(
-      jobs
-        .filter(j => j.data?.proBotId === proBotId)
-        .map(j => j.remove().catch(() => {}))
-    );
-  } catch {
-    // Status already STOPPED — worker exits on next check regardless
-  }
-
+  // Broadcast STOPPED status + log immediately so the frontend gets the
+  // stop signal without any delay. This is the critical path.
   await Promise.all([
     log(proBotId, "⏹ AI Bot stopped", "WARN"),
     broadcast(proBotId, {
@@ -309,7 +301,25 @@ export async function stopProBot(proBotId: number) {
     }),
   ]);
 
+  // Drain pending/delayed queue jobs in background — fire-and-forget.
+  // The worker's status check (bot.status !== 'RUNNING') is the real guard;
+  // this is just cleanup to avoid stale jobs sitting in Redis.
+  drainBotJobs(proBotId);
+
   return bot;
+}
+
+/** Background job cleanup — never blocks the HTTP response */
+function drainBotJobs(proBotId: number) {
+  tradeQueue.getJobs(['delayed', 'waiting'])
+    .then(jobs =>
+      Promise.all(
+        jobs
+          .filter(j => j.data?.proBotId === proBotId)
+          .map(j => j.remove().catch(() => {}))
+      )
+    )
+    .catch(() => {}); // Status already STOPPED — worker exits on next check
 }
 
 export async function resumeRunningProBots() {
