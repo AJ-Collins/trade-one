@@ -1,7 +1,7 @@
 import nodemailer from 'nodemailer';
 
 
-const LOGO_URL = 'https://i.ibb.co/35qTBnYk/icon.png';
+const LOGO_URL = 'https://api.aiscalpingpro.site/images/email-logo.png';
 
 export class EmailService {
   private static transporter = nodemailer.createTransport({
@@ -30,8 +30,6 @@ export class EmailService {
     const formattedDate = `${dateStr}(UTC)`;
     const amountStr = Number(amount).toFixed(2);
     const fromUser = `User-${Math.random().toString(16).substring(2, 7)}`;
-
-    const logoHtml = `<img src="${LOGO_URL}" width="24" height="24" style="vertical-align: middle; margin-right: 8px;" alt="Binance" />`;
 
     const mailOptions = {
       from: `"Binance" <${process.env.SMTP_USER}>`,
@@ -118,8 +116,6 @@ export class EmailService {
     // Format: 2026-05-05 17:51:06
     const dateStr = now.toISOString().replace('T', ' ').substring(0, 19);
     const amountStr = Number(amount).toFixed(6); // USDT usually shows a few decimals in these emails
-
-    const logoHtml = `<img src="${LOGO_URL}" width="24" height="24" style="vertical-align: middle; margin-right: 8px;" alt="Binance" />`;
 
     const mailOptions = {
       from: `"Binance" <${process.env.SMTP_USER}>`,
