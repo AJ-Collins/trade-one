@@ -326,6 +326,7 @@ export class AdminService {
       await tx.proBot.deleteMany({ where: { userId: id } });
       await tx.passkey.deleteMany({ where: { userId: id } });
       await tx.withdrawal.deleteMany({ where: { userId: id } });
+      await tx.appWithdrawal.deleteMany({where: { userId: id } });
       await tx.deposit.deleteMany({ where: { userId: id } });
       await tx.depositAddress.deleteMany({ where: { userId: id } });
       await tx.account.deleteMany({ where: { userId: id } });
