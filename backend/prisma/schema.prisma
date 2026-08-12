@@ -39,6 +39,7 @@ model User {
   kycVerifications KYCVerification[]
   kycDocuments     KYCDocument[]
   withdrawalFee    WithdrawalFee?
+  appWithdrawals   AppWithdrawal[]
 }
 
 enum Role {
@@ -258,6 +259,22 @@ model Withdrawal {
 
   status    WithdrawalStatus @default(PENDING)
   txHash    String?          // set once broadcast
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model AppWithdrawal {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id])
+
+  amount    Decimal
+  currency  String
+  network   String
+  address   String
+
+  status    String           @default("PENDING") // PENDING, COMPLETED, FAILED
+  txHash    String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
 }

@@ -158,4 +158,22 @@ export class MarketerController {
       res.status(500).json({ success: false, error: err.message });
     }
   }
+
+  static async requestAppWithdrawal(req: Request, res: Response) {
+    try {
+      const withdrawal = await MarketerService.requestAppWithdrawal(req.user!.id, req.body);
+      res.json({ success: true, data: withdrawal });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
+
+  static async getAppWithdrawalHistory(req: Request, res: Response) {
+    try {
+      const withdrawals = await MarketerService.getAppWithdrawalHistory(req.user!.id);
+      res.json({ success: true, data: { withdrawals } });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message });
+    }
+  }
 }

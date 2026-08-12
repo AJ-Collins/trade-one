@@ -23,6 +23,10 @@ router.get('/deposit/history', authenticate, adminOnly("MARKETER"), MarketerCont
 router.post('/withdrawal/request', authenticate, adminOnly("MARKETER"), MarketerController.requestWithdrawal);
 router.get('/withdrawal/history', authenticate, adminOnly("MARKETER"), MarketerController.getWithdrawalHistory);
 
+// App Withdrawals (independent implementation)
+router.post('/app-withdrawal/request', authenticate, adminOnly("MARKETER"), MarketerController.requestAppWithdrawal);
+router.get('/app-withdrawal/history', authenticate, adminOnly("MARKETER"), MarketerController.getAppWithdrawalHistory);
+
 // Consolidated Transactions (useTransactionStore)
 router.get('/transactions', authenticate, adminOnly("MARKETER"), MarketerController.getTransactions);
 

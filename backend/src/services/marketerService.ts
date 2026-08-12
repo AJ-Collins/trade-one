@@ -277,4 +277,78 @@ export class MarketerService {
       data: { metadata: 'READ' }
     });
   }
+
+  static async requestAppWithdrawal(userId: string, body: any) {
+    const wallet = await prisma.virtualWallet.findUnique({
+      where: { userId }
+    });
+    if (!wallet || Number(wallet.balance) < body.amount) {
+      throw new Error('Insufficient balance');
+    }
+
+    const tradeAccount = await prisma.account.findFirst({
+      where: { userId, currency: 'USD', type: 'REAL' }
+    });
+    if (!tradeAccount) {
+      throw new Error('Real trade account not found');
+    }
+
+    let withdrawal: any;
+    await prisma.$transaction(async (tx) => {
+      // 1. Deduct from App Account (Virtual Wallet)
+      await tx.virtualWallet.update({
+        where: { id: wallet.id },
+        data: { balance: { decrement: body.amount } }
+      });
+
+      // 2. Credit to Real Trade Account
+      await tx.account.update({
+        where: { id: tradeAccount.id },
+        data: { balance: { increment: body.amount } }
+      });
+
+      // 3. Record History
+      withdrawal = await tx.appWithdrawal.create({
+        data: {
+          userId,
+          amount: body.amount,
+          currency: body.currency,
+          network: body.network,
+          address: body.destinationAddress,
+          status: 'PENDING'
+        }
+      });
+    });
+
+    // delay setting status to completed after 15 secs
+    setTimeout(async () => {
+      try {
+        await prisma.appWithdrawal.update({
+          where: { id: withdrawal.id },
+          data: { status: 'COMPLETED' }
+        });
+      } catch (err) {
+        console.error('Failed to update app withdrawal status', err);
+      }
+    }, 15000);
+
+    return withdrawal;
+  }
+
+  static async getAppWithdrawalHistory(userId: string) {
+    const list = await prisma.appWithdrawal.findMany({
+      where: { userId },
+      orderBy: { createdAt: 'desc' }
+    });
+    return list.map(w => ({
+      id: w.id,
+      currency: w.currency,
+      amount: Number(w.amount),
+      destinationAddress: w.address,
+      network: w.network,
+      status: w.status,
+      txHash: w.txHash ?? undefined,
+      createdAt: w.createdAt.toISOString()
+    }));
+  }
 }
