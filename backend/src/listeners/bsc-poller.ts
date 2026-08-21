@@ -6,11 +6,11 @@ import { enqueueDepositActivity } from '../queues/depositQueue.js';
 
 const NETWORK = 'bsc_mainnet';
 const LAST_BLOCK_KEY = 'BSC_POLLER_LAST_BLOCK';
-const CONFIRMATION_LAG = 3;     // blocks to hold back, avoids acting on soon-to-reorg blocks
-const BATCH_SIZE = 10;         // max blocks per cycle
+const CONFIRMATION_LAG = 3;
+const BATCH_SIZE = 10;
 const TRANSFER_TOPIC = ethers.utils.id('Transfer(address,address,uint256)');
 
-let running = false; // prevents overlapping cycles if RPC is slow
+let running = false;
 
 export async function pollBscOnce() {
   if (running) return;
@@ -18,6 +18,7 @@ export async function pollBscOnce() {
   try {
     const rpcUrl = await getConfig(NETWORK_RPC_CONFIG_KEY[NETWORK]!);
     if (!rpcUrl) { console.warn('[BSC Poller] No RPC configured — skipping'); return; }
+
     const provider = new ethers.providers.JsonRpcProvider(rpcUrl);
 
     const watched = await prisma.depositAddress.findMany({
@@ -25,33 +26,43 @@ export async function pollBscOnce() {
       select: { address: true },
     });
     if (watched.length === 0) return;
+
+    // Build a Set for fast local filtering — avoids passing address list to BSC node
+    // BSC nodes reject eth_getLogs with more than ~5 addresses in topics filter (-32005)
     const watchedSet = new Set(watched.map(w => w.address.toLowerCase()));
-    const addressTopics = watched.map(w => ethers.utils.hexZeroPad(w.address, 32).toLowerCase());
 
     const latest = await provider.getBlockNumber();
     const safeHead = latest - CONFIRMATION_LAG;
 
     const storedLast = await getConfig(LAST_BLOCK_KEY);
-    const fromBlock = storedLast ? Number(storedLast) + 1 : safeHead; // first run: start at head, don't backfill history
+    const fromBlock = storedLast ? Number(storedLast) + 1 : safeHead;
     const toBlock = Math.min(safeHead, fromBlock + BATCH_SIZE - 1);
     if (toBlock < fromBlock) return;
 
     // --- USDT / USDC transfers ---
+    // Query ALL transfers on the contract with NO address filter in topics.
+    // Filter locally in memory — BSC nodes enforce a strict topic array size limit.
     const contracts = await getStablecoinContracts(NETWORK);
     const contractAddrs = Object.keys(contracts);
+
     if (contractAddrs.length) {
       for (const contractAddr of contractAddrs) {
         const logs = await provider.getLogs({
-          fromBlock, toBlock,
-          address: contractAddr,   // single address now — ethers handles this fine
-          topics: [TRANSFER_TOPIC, null, addressTopics],
+          fromBlock,
+          toBlock,
+          address: contractAddr,
+          topics: [TRANSFER_TOPIC], // NO address filter — filter locally below
         });
 
         for (const log of logs) {
+          if (!log.topics[2]) continue;
           const to = ethers.utils.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
-          if (!watchedSet.has(to)) continue;
+          if (!watchedSet.has(to)) continue; // local filter
+
           const token = contracts[log.address.toLowerCase()];
+          if (!token) continue;
           const rawValue = BigInt(log.data).toString();
+
           await enqueueDepositActivity(NETWORK, {
             category: 'token',
             fromAddress: ethers.utils.getAddress('0x' + log.topics[1].slice(26)),

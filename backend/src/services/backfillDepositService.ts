@@ -70,9 +70,20 @@ export async function backfillDepositTx(
     const token = contracts[log.address.toLowerCase()];
     if (!token) continue;
 
+    // Direction guard
     const to = ethers.utils.getAddress('0x' + log.topics[2].slice(26)).toLowerCase();
+    const from = ethers.utils.getAddress('0x' + log.topics[1].slice(26)).toLowerCase();
     const match = watchMap.get(to);
     if (!match) continue;
+
+    // Guard: skip if the sender is also a watched deposit address.
+    // This prevents sweep transactions (where `from` is a deposit address
+    // sending funds OUT to the hot wallet) from being mistakenly credited
+    // as incoming deposits.
+    if (watchMap.has(from)) {
+      console.warn(`[Backfill] Skipping sweep-like transfer from watched address ${from} → ${to}`);
+      continue;
+    }
 
     anyMatch = true;
     const rawValue = BigInt(log.data);
