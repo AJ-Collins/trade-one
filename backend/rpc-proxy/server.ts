@@ -15,7 +15,6 @@ const PROVIDERS: Record<string, string[]> = {
     'https://polygon-bor-rpc.publicnode.com',
     'https://polygon.drpc.org',
     `https://rpc.ankr.com/polygon/${process.env.ANKR_KEY}`,
-    'https://poly-rpc.gateway.pokt.network',
   ],
   arbitrum: [
     'https://arbitrum-one-rpc.publicnode.com',

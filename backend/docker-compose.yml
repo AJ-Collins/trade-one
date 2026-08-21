@@ -181,6 +181,8 @@ services:
       dockerfile: Dockerfile
     container_name: aiscalping_rpc_proxy
     restart: always
+    env_file:
+      - .env
     # Only accessible inside the Docker network — not exposed to internet
     expose:
       - "3099"
